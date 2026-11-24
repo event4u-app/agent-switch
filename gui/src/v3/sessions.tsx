@@ -66,6 +66,8 @@ export interface RowSession {
   needsYou: boolean;
   /** Finished today (the "Done today" row), not in the live list. */
   doneToday?: boolean;
+  /** Quiet for over a day: listed folded under "Older than a day", not in the live list. */
+  older?: boolean;
   /** Who reported `state` (the dot's tooltip). */
   stateSource?: StateSource | null;
   /** D3: "no update in 34m" — working by the host's word, nothing changed since. */
@@ -132,7 +134,7 @@ const statusRank = (x: RowSession) => (x.needsYou || x.state === "needs-you" ? 0
 
 /** One order everywhere (window, tray): needs you · CI failing · working · rest; done sessions are not listed. Pure. */
 export function liveOrder(sessions: readonly RowSession[]): RowSession[] {
-  return sessions.filter((s) => s.state !== "done").sort((a, b) => statusRank(a) - statusRank(b));
+  return sessions.filter((s) => s.state !== "done" && !s.doneToday && !s.older).sort((a, b) => statusRank(a) - statusRank(b));
 }
 
 /** The first descendant that needs the user, depth first (D6). Pure. */
@@ -591,8 +593,6 @@ export function SessionsZone({
   onSelect,
   onToggleChildren,
   onCheck,
-  onCleanUp,
-  onDoneToday,
   onStart,
   sort = DEFAULT_SORT,
   group = "none",
@@ -623,8 +623,6 @@ export function SessionsZone({
   onSelect: (key: string) => void;
   onToggleChildren: (key: string) => void;
   onCheck: (key: string) => void;
-  onCleanUp: () => void;
-  onDoneToday: () => void;
   /** The empty zone's one action (spec §5.2). */
   onStart?: () => void;
   /** The list's order and grouping (the zone head shows and opens them). */
@@ -660,7 +658,6 @@ export function SessionsZone({
   const order = useHeldOrder(sorted.map((s) => s.key), engaged || !!holdOrder);
   const byKey = new Map(sorted.map((s) => [s.key, s]));
   const live = order.map((k) => byKey.get(k)!);
-  const done = sessions.filter((s) => s.doneToday).length;
   const grouped = group !== "none" && !!groupOf;
   // Grouped: one header per group, in the order the sorted list first meets it; rows keep the sort inside.
   const groups = grouped ? [...new Set(live.map((s) => groupOf!(s.key) ?? ""))] : [""];
@@ -765,17 +762,46 @@ export function SessionsZone({
           )),
           ]),
         ])}
-        {done > 0 && (
-          <div className="mt-0.5 flex h-7 items-center gap-2 px-2.5 text-[11.5px] text-ac-muted">
-            <button type="button" onClick={onDoneToday} className="inline-flex items-center gap-2 hover:text-ac-text">
-              <ChevronRight className="size-3" /> Done today {done}
-            </button>
-            <button type="button" onClick={onCleanUp} title="Removes worktrees whose PR merged; dirty ones are skipped" className="ml-auto hover:text-ac-text">
-              Clean up
-            </button>
-          </div>
-        )}
       </div>
     </section>
+  );
+}
+
+/** Which past sessions a footer row opens in All sessions. */
+export type PastRange = "done" | "older";
+
+/**
+ * The two rows pinned under the session list: sessions quiet past the done-after
+ * time, and sessions quiet for over a day. Both open All sessions on their time;
+ * a row with nothing in it is left out.
+ */
+export function SessionsFooter({ done, older, onOpen, onCleanUp }: { done: number; older: number; onOpen: (range: PastRange) => void; onCleanUp: () => void }) {
+  if (done === 0 && older === 0) return null;
+  // Both rows share the grid's columns, so the badges line up under each other.
+  const row = "col-span-2 col-start-1 grid h-7 grid-cols-subgrid items-center gap-x-2 rounded-md px-1.5 text-left hover:bg-ac-raise hover:text-ac-text";
+  return (
+    <div className="grid shrink-0 grid-cols-[max-content_max-content_1fr] items-center border-t border-ac-line px-1.5 py-1 text-[11.5px] text-ac-muted">
+      {done > 0 && (
+        <>
+          <button type="button" onClick={() => onOpen("done")} className={row}>
+            <span className="inline-flex items-center gap-2">
+              <ChevronRight className="size-3" /> Done today
+            </span>
+            <Chip kind="tag">{done}</Chip>
+          </button>
+          <button type="button" onClick={onCleanUp} title="Removes worktrees whose PR merged; dirty ones are skipped" className="justify-self-end px-1.5 hover:text-ac-text">
+            Clean up
+          </button>
+        </>
+      )}
+      {older > 0 && (
+        <button type="button" onClick={() => onOpen("older")} className={row}>
+          <span className="inline-flex items-center gap-2">
+            <ChevronRight className="size-3" /> Older than a day
+          </span>
+          <Chip kind="tag">{older}</Chip>
+        </button>
+      )}
+    </div>
   );
 }

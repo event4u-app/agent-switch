@@ -112,6 +112,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch os-notify [on|off|status] [--json]   daemon-side OS desktop notifications, Linux/Windows (default off; macOS: the app shows them)
   agent-switch quiet-hours [off|HH:MM-HH:MM|status] [--json]   no desktop notification in this daily window (still listed)
   agent-switch keep-signed-in [on|off|status] [--json]   let the service keep unused logins from lapsing (default on)
+  agent-switch terminal-sync [on|off|status] [--json]   a claude or codex typed in your terminal runs in Agent Switch, so the app types into the same session (default on)
   agent-switch auto-reset [on|off|status] [--json]   at 100 % the service redeems one banked Codex reset by itself, once per cycle (default off)
   agent-switch uninstall [--force]             remove all agent-switch data + daemon
   agent-switch usage history [--provider P] [--profile <name>] [--json]   daemon-recorded usage samples per profile

@@ -69,6 +69,23 @@ describe("All sessions page (spec §10.2)", () => {
   });
 });
 
+describe("All sessions opened for a time (Done today, Older than a day)", () => {
+  it("shows only the sessions of that time, says so in the title, and widens back to all", () => {
+    const rows = [sess("a", { title: "Busy", when: "active" }), sess("b", { title: "Quiet", when: "done" }), sess("c", { title: "Stale", when: "older" })];
+    render(<AllSessionsPage sessions={rows} range="older" nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    expect(screen.getByRole("heading", { name: "Older than a day" })).toBeTruthy();
+    expect(screen.getByText("Stale")).toBeTruthy();
+    expect(screen.queryByText("Busy")).toBeNull();
+    expect(screen.queryByText("Quiet")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "Done today 1" }));
+    expect(screen.getByText("Quiet")).toBeTruthy();
+    expect(screen.queryByText("Stale")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "Any time 3" }));
+    expect(screen.getByRole("heading", { name: "All sessions" })).toBeTruthy();
+    expect(screen.getByText("Busy")).toBeTruthy();
+  });
+});
+
 describe("All sessions follows the sidebar's order (8.6)", () => {
   it("rows in the sidebar's order first, then the rest newest first", () => {
     const rows = [sess("a", { lastActiveMs: NOW - 1_000 }), sess("b"), sess("done-old", { live: false, lastActiveMs: NOW - 9_000_000 }), sess("done-new", { live: false, lastActiveMs: NOW - 5_000 }), sess("c")];

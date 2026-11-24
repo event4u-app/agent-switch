@@ -246,7 +246,13 @@ export interface TableSession {
   projectRoot?: string | null;
   /** The checkout the session works in (its toplevel), for the worktree sub-header (D8). */
   worktree?: { id: string; branch: string | null; linked: boolean } | null;
+  /** Active, quiet past the done-after time (Done today), or quiet for over a day: the sidebar's split. */
+  when?: "active" | "done" | "older";
 }
+
+/** The time All sessions shows: everything, or one of the sidebar footer's rows. */
+export type SessionRange = "all" | "done" | "older";
+const RANGE_TITLE: Record<SessionRange, string> = { all: "All sessions", done: "Done today", older: "Older than a day" };
 
 /** Sessions grouped by project, the most recently active project first; no project last. Pure. */
 export function byProject(rows: readonly TableSession[]): { project: string | null; rows: TableSession[] }[] {
@@ -271,25 +277,37 @@ export function filterSessions(rows: readonly TableSession[], q: string, state: 
   return rows.filter((s) => (state === "all" || (state === "live") === s.live) && (tool === "any" || s.tool === tool) && matches(q, s.title, s.account.name, s.branch, s.pr ? `#${s.pr.number}` : null));
 }
 
-export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch }: { sessions: TableSession[]; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions }) {
+export function AllSessionsPage({ sessions, range: opened = "all", order, nowMs, onOpen, batch }: { sessions: TableSession[]; /** The time it opens on (the footer row clicked); the page can widen it. */ range?: SessionRange; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions }) {
   const [q, setQ] = useState("");
+  const [range, setRange] = useState<SessionRange>(opened);
   const [state, setState] = useState<"all" | "live" | "done">("all");
   const [tool, setTool] = useState<"any" | TableSession["tool"]>("any");
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [group, setGroup] = useState<"none" | "project">("none");
   const rows = useMemo(() => {
-    const hits = filterSessions(sessions, q, state, tool);
+    const hits = filterSessions(sessions, q, state, tool).filter((s) => range === "all" || s.when === range);
     return order ? inListOrder(hits, order) : hits;
-  }, [sessions, order, q, state, tool]);
+  }, [sessions, order, q, state, tool, range]);
   const sections = useMemo(() => (group === "project" ? byProject(rows) : [{ project: null as string | null, rows }]), [rows, group]);
   const live = sessions.filter((s) => s.live).length;
   const cols = "grid-cols-[24px_minmax(0,1.6fr)_120px_minmax(0,1.2fr)_120px_70px_80px]";
   const toggle = (k: string) => setSel((c) => (c.has(k) ? new Set([...c].filter((x) => x !== k)) : new Set([...c, k])));
   return (
-    <PageBody title="All sessions" sub="Scan, filter and act on many sessions at once.">
-      <div className="mb-3 flex items-center gap-2">
+    <PageBody title={RANGE_TITLE[range]} sub="Scan, filter and act on many sessions at once.">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <Filter value={q} onChange={setQ} placeholder="Filter…" width={300} />
         <Segmented size="sm" label="State" value={state} onChange={setState} options={[{ value: "all", label: `All ${sessions.length}` }, { value: "live", label: `Live ${live}` }, { value: "done", label: `Done ${sessions.length - live}` }]} />
+        <Segmented
+          size="sm"
+          label="Time"
+          value={range}
+          onChange={setRange}
+          options={[
+            { value: "all", label: `Any time ${sessions.length}` },
+            { value: "done", label: `Done today ${sessions.filter((s) => s.when === "done").length}` },
+            { value: "older", label: `Older than a day ${sessions.filter((s) => s.when === "older").length}` },
+          ]}
+        />
         <Segmented size="sm" label="Tool" value={tool} onChange={setTool} options={[{ value: "any", label: "Any tool" }, { value: "claude", label: "Claude" }, { value: "codex", label: "Codex" }, { value: "antigravity", label: "Antigravity" }]} />
         <Segmented size="sm" label="Group" value={group} onChange={setGroup} options={[{ value: "none", label: "List" }, { value: "project", label: "Projects" }]} />
       </div>

@@ -102,3 +102,58 @@ test("typing reaches the hosted window only for the holder, literally", { skip: 
     host.killServer();
   }
 });
+
+/** A host whose window shows an empty prompt and whose view clients report `activity()` (epoch seconds). */
+function typingHost(activity: () => number[]) {
+  const sent: string[][] = [];
+  const host = {
+    windowOf: () => "@1",
+    run: (args: string[]) => {
+      if (args[0] === "list-clients") return { ok: true, out: activity().map((a) => `${a} @1`).concat(["99999999999 @2"]).join("\n"), err: "" };
+      if (args[0] === "capture-pane") return { ok: true, out: "> \n", err: "" };
+      sent.push(args);
+      return { ok: true, out: "", err: "" };
+    },
+  } as unknown as TmuxHost;
+  return { host, sent };
+}
+
+test("G3: an automated send waits while a person types in an attached view, then sends", () => {
+  let t = 1_000_000_000_000;
+  const root = tmp();
+  const leases = new InputLeases(root, () => t, () => true, (ms) => void (t += ms));
+  leases.acquire("k", app);
+  const typedAt = t / 1000 - 1; // a key a second ago; quiet from 2 s on (activity is in whole seconds)
+  const { host, sent } = typingHost(() => [typedAt]);
+  const before = t;
+  leases.type(host, "k", app, "go on", { enter: true });
+  assert.ok(t - before >= 2000, "it waited for the person");
+  assert.deepEqual(sent, [["send-keys", "-t", "@1", "-l", "go on"], ["send-keys", "-t", "@1", "Enter"]]);
+});
+
+test("G3: never quiet within 60 s gives up and types nothing; another window's client never counts", () => {
+  let t = 1_000_000_000_000;
+  const leases = new InputLeases(tmp(), () => t, () => true, (ms) => void (t += ms));
+  leases.acquire("k", app);
+  const { host, sent } = typingHost(() => [Math.floor(t / 1000)]);
+  assert.throws(() => leases.type(host, "k", app, "go on", { enter: true }), /someone is typing in it/);
+  assert.deepEqual(sent, []);
+  // Only window @2's client is busy: no wait at all. (The long wait above outlived the lease: take it again.)
+  leases.acquire("k2", app);
+  const other = typingHost(() => []);
+  const start = t;
+  leases.type(other.host, "k2", app, "hi", { enter: true });
+  assert.equal(t, start);
+  assert.equal(other.sent.length, 2);
+});
+
+test("G3: a key typed between the text and Enter: no Enter, and only what was typed is taken back", () => {
+  let t = 1_000_000_000_000;
+  const leases = new InputLeases(tmp(), () => t, () => true, (ms) => void (t += ms));
+  leases.acquire("k", app);
+  let calls = 0;
+  // Quiet when it looks first; a person types right after the text went in.
+  const { host, sent } = typingHost(() => (calls++ === 0 ? [] : [Math.floor(t / 1000)]));
+  assert.throws(() => leases.type(host, "k", app, "go ön", { enter: true }), /someone typed in it while/);
+  assert.deepEqual(sent, [["send-keys", "-t", "@1", "-l", "go ön"], ["send-keys", "-t", "@1", "-N", "5", "BSpace"]]);
+});

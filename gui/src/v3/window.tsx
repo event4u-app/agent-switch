@@ -23,10 +23,10 @@ import { answeredThere, NeedsZone, type AwayDigest, type NeedItem } from "./need
 import { limitToOpen, markLimitOpened, openedLimits, wasOpened } from "./adapter/limit-auto.js";
 import { accountOfKey } from "../vm/switch-requests.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
-import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
+import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type SessionRange, type TableSession } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
 import type { ReviewFocus } from "./review.js";
-import { DEFAULT_SORT, SessionsZone, sortLive, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
+import { DEFAULT_SORT, SessionsFooter, SessionsZone, sortLive, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
 import { SubagentView } from "./subagent-view.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
@@ -58,7 +58,7 @@ export interface V3Data {
   palette: PaletteEntry[];
   appearance: Appearance;
   prefersDark: boolean;
-  openIn: { targets: OpenTarget[]; defaultTarget: string | null; lastUsed: string | null; perRepo: Record<string, string>; focusTerminal: boolean; agentApps: { id: string; label: string; tool: string }[]; terminal?: string | null; terminals?: { id: string; name: string; installed: boolean }[] };
+  openIn: { targets: OpenTarget[]; defaultTarget: string | null; lastUsed: string | null; perRepo: Record<string, string>; focusTerminal: boolean; /** `terminal-sync`; null before the first read. */ terminalSync?: boolean | null; agentApps: { id: string; label: string; tool: string }[]; terminal?: string | null; terminals?: { id: string; name: string; installed: boolean }[] };
   /** Settings › Agents (v3.2). */
   agents: { rows: AgentRowView[]; suggestions: AgentSuggestionView[] };
   /** Settings › Remote (v3.2): R1 accounts and the SSH stage. */
@@ -142,6 +142,7 @@ export type V3Action =
   | { type: "agent-install"; id: string }
   | { type: "remote-rc"; account: string; value: boolean }
   | { type: "remote-ssh"; value: boolean }
+  | { type: "terminal-sync"; value: boolean }
   | { type: "restart-engine" };
 
 export const SESSION_MENU = ["Rename…", "Pin", "Move to another account…", "Take over here…", "Hand off…", "Compact", "Detach", "End…"] as const;
@@ -269,6 +270,8 @@ export function V3Window({
   };
   useEffect(() => () => void (peekTimer.current && clearTimeout(peekTimer.current)), []);
 
+  /** The time All sessions opens on: a footer row's, or everything from the palette. */
+  const [tableRange, setTableRange] = useState<SessionRange>("all");
   const openPage = useCallback((p: Page) => {
     setStrip((cur) => openTab(cur, `page:${p}`));
     setActive(`page:${p}`);
@@ -543,14 +546,14 @@ export function V3Window({
         />
       );
     // 8.6: the table in the sidebar's order (its sort), ended sessions after it.
-    if (p === "sessions-table") return <AllSessionsPage sessions={data.table} order={sortLive(data.sessions, sortBy, lastActiveOf).map((row) => row.key)} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
+    if (p === "sessions-table") return <AllSessionsPage key={tableRange} range={tableRange} sessions={data.table} order={sortLive(data.sessions, sortBy, lastActiveOf).map((row) => row.key)} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
     if (p === "tools") return slots.tools;
     return (
       <SettingsPage current={section} onSection={setSection}>
         {section === "Appearance" ? (
           <AppearanceSettings a={data.appearance} prefersDark={data.prefersDark} onChange={(value) => act({ type: "appearance", value })} />
         ) : section === "Open in" ? (
-          <OpenInSettings {...data.openIn} on={{ setDefault: (target, repo) => act({ type: "open-default", target, repo }), setTerminal: (id) => act({ type: "open-terminal", id }), focusTerminal: (value) => act({ type: "focus-terminal-setting", value }) }} />
+          <OpenInSettings {...data.openIn} on={{ setDefault: (target, repo) => act({ type: "open-default", target, repo }), setTerminal: (id) => act({ type: "open-terminal", id }), focusTerminal: (value) => act({ type: "focus-terminal-setting", value }), terminalSync: (value) => act({ type: "terminal-sync", value }) }} />
         ) : section === "Agents" ? (
           <AgentsSettings agents={data.agents.rows} suggestions={data.agents.suggestions} on={{ toggle: (id, value) => act({ type: "agent-enabled", id, value }), install: (id) => act({ type: "agent-install", id }) }} />
         ) : section === "Remote" ? (
@@ -851,11 +854,18 @@ export function V3Window({
           onSelect={openSession}
           onToggleChildren={(k) => setOpenKids((c) => (c.has(k) ? new Set([...c].filter((x) => x !== k)) : new Set([...c, k])))}
           onCheck={(k) => setSelection((c) => { const n = new Set(c ?? []); n.has(k) ? n.delete(k) : n.add(k); return n; })}
-          onCleanUp={() => act({ type: "clean-up" })}
-          onDoneToday={() => openPage("sessions-table")}
           batch={batch([...(selection ?? [])])}
         />
       </div>
+      <SessionsFooter
+        done={data.table.filter((t) => t.when === "done").length}
+        older={data.table.filter((t) => t.when === "older").length}
+        onOpen={(range) => {
+          setTableRange(range);
+          openPage("sessions-table");
+        }}
+        onCleanUp={() => act({ type: "clean-up" })}
+      />
       <LimitsStrip accounts={data.limits} nowMs={data.nowMs} openKey={limitsOpen} onOpen={(key) => setOverlay((o) => (o && typeof o === "object" && "limits" in o && o.limits === key ? null : { limits: key }))} onSignIn={(key) => act({ type: "account", op: "sign-in", key })} />
     </aside>
   );
@@ -879,6 +889,7 @@ export function V3Window({
         onClose={close}
         onOpen={(entry, newTab) => {
           close();
+          if (entry.id === "page:sessions-table") setTableRange("all");
           if (entry.id.startsWith("page:")) openPage(entry.id.slice(5) as Page);
           else if (entry.group === "sessions") openSession(entry.id);
           else if (entry.group === "branches" && entry.id.startsWith("pr:")) openSession(entry.id.slice(3));

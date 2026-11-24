@@ -18,6 +18,13 @@ import type { TmuxHost } from "./tmux-host.js";
 /** Typing into a hosted window did not happen; the message says why. */
 export class TypeFailed extends Error {}
 
+/** A person who typed in an attached view this recently is still typing (G3). */
+export const DRAFT_QUIET_MS = 3_000;
+/** How long an automated send waits for that person before it gives up. */
+export const DRAFT_WAIT_MS = 60_000;
+
+const sleepSync = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
 /** A holder that has not renewed for this long has lost the lease. */
 export const LEASE_TTL_MS = 15_000;
 
@@ -56,7 +63,7 @@ function alive(pid: number): boolean {
 export class InputLeases {
   private readonly dir: string;
 
-  constructor(root: string, private readonly now: () => number = Date.now, private readonly isAlive: (pid: number) => boolean = alive) {
+  constructor(root: string, private readonly now: () => number = Date.now, private readonly isAlive: (pid: number) => boolean = alive, private readonly sleep: (ms: number) => void = sleepSync) {
     this.dir = path.join(root, "host", "leases");
   }
 
@@ -160,6 +167,24 @@ export class InputLeases {
       if (!r.ok) throw new TypeFailed(`typing into ${key} failed: ${r.err.trim() || "tmux refused"}`);
       return r.out;
     };
+    // G3: a person typing in a view attached to this window (a terminal start, `host attach`) has
+    // the floor. Wait until they have been quiet for a moment; give up rather than mix keys.
+    const lastKey = () => {
+      const times = tmux(["list-clients", "-F", "#{client_activity} #{window_id}"])
+        .split("\n")
+        .map((l) => l.trim().split(" "))
+        .filter(([, w]) => w === window)
+        .map(([a]) => Number(a) * 1000)
+        .filter((n) => Number.isFinite(n));
+      return times.length ? Math.max(...times) : -Infinity;
+    };
+    const giveUp = this.now() + DRAFT_WAIT_MS;
+    let seen = lastKey();
+    while (this.now() - seen < DRAFT_QUIET_MS) {
+      if (this.now() >= giveUp) throw new TypeFailed(`nothing was sent: someone is typing in it (${key}); it is left for you`);
+      this.sleep(250);
+      seen = lastKey();
+    }
     if (opts.enter) {
       // -e keeps the styling, which tells a dimmed placeholder from typed text.
       const input = promptDraft(tmux(["capture-pane", "-p", "-e", "-J", "-t", window]));
@@ -169,6 +194,13 @@ export class InputLeases {
     }
     // -l: the text is typed as-is, never read as tmux key names.
     if (text) tmux(["send-keys", "-t", window, "-l", text]);
-    if (opts.enter) tmux(["send-keys", "-t", window, "Enter"]);
+    if (opts.enter) {
+      // A key between the text and Enter would be submitted with it: take back only what was typed here.
+      if (lastKey() > seen) {
+        if (text) tmux(["send-keys", "-t", window, "-N", String([...text].length), "BSpace"]);
+        throw new TypeFailed(`nothing was sent: someone typed in it while it was being sent (${key}); it is left for you`);
+      }
+      tmux(["send-keys", "-t", window, "Enter"]);
+    }
   }
 }

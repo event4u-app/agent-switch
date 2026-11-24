@@ -127,3 +127,49 @@ test("PowerShell: the shell the user runs is asked first", () => {
   assert.deepEqual(powershellOrder(v7), ["pwsh", "powershell"]);
   assert.deepEqual(powershellOrder({}), ["pwsh", "powershell"]);
 });
+
+test("POSIX: claude runs through launch when dir says it can, and falls back to the plain start on 87 or an older agent-switch", { skip: process.platform === "win32" ? "POSIX shell" : false }, async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const { spawnSync } = await import("node:child_process");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "asw-wrap-"));
+  const bin = path.join(root, "bin");
+  fs.mkdirSync(bin);
+  const log = path.join(root, "log");
+  // agent-switch stand-in: `dir` answers per $DIR_OUT, `launch` logs its argv and exits $LAUNCH_RC.
+  fs.writeFileSync(path.join(bin, "agent-switch"), `#!/bin/sh
+case "$1" in
+  dir) echo "dir $*" >> "${log}"; printf '%s\\n' "$DIR_OUT" ;;
+  launch) echo "launch $*" >> "${log}"; exit "$LAUNCH_RC" ;;
+esac
+`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, "claude"), `#!/bin/sh\necho "claude cfg=$CLAUDE_CONFIG_DIR args=$*" >> "${log}"\n`, { mode: 0o755 });
+  const run = (dirOut: string, launchRc: number) => {
+    fs.writeFileSync(log, "");
+    const r = spawnSync("bash", ["-c", `${shellenvScript("bash")}\nclaude -p "two words"; echo "rc=$?" >> "${log}"`], {
+      env: { PATH: `${bin}:/usr/bin:/bin`, HOME: root, AGENT_SWITCH_HOME: root, DIR_OUT: dirOut, LAUNCH_RC: String(launchRc) },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    return fs.readFileSync(log, "utf8").trim().split("\n");
+  };
+  // Hosted: launch ran the session; the plain binary never starts.
+  assert.deepEqual(run("launch:/as/cfg", 3), ["dir dir --provider claude --guard --launch", "launch launch claude --config-dir /as/cfg -- -p two words", "rc=3"]);
+  // Plain plan: the old start, on the same config dir.
+  assert.deepEqual(run("launch:/as/cfg", 87).slice(1), ["launch launch claude --config-dir /as/cfg -- -p two words", "claude cfg=/as/cfg args=-p two words", "rc=0"]);
+  // An older agent-switch ignores --launch and prints the bare dir: launch is never called.
+  assert.deepEqual(run("/as/cfg", 0).slice(1), ["claude cfg=/as/cfg args=-p two words", "rc=0"]);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("only claude and codex go through launch; fish follows the same protocol", () => {
+  const posix = shellenvScript("zsh");
+  assert.match(posix, /claude\(\) \{[\s\S]*?launch claude --config-dir[\s\S]*?\n\}/);
+  assert.match(posix, /codex\(\) \{[\s\S]*?launch codex --config-dir[\s\S]*?\n\}/);
+  assert.doesNotMatch(posix.slice(posix.indexOf("agy() {")), /launch/);
+  const fish = shellenvScript("fish");
+  assert.match(fish, /dir --provider claude --guard --launch/);
+  assert.match(fish, /command \$as launch claude --config-dir \$dir -- \$argv/);
+  assert.match(fish, /if test \$rc -ne 87/);
+  assert.doesNotMatch(shellenvScript("powershell"), /launch/);
+});

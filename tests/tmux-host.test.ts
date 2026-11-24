@@ -43,6 +43,16 @@ test("programArgv: claude gets a chosen session id and the hook settings; a resu
   assert.deepEqual(TmuxHost.programArgv({ ...o, provider: "codex", bin: "codex" }, "u-1", null), ["codex"]);
 });
 
+test("programArgv: an env file is sourced and removed by sh, which then becomes the program", () => {
+  const o = { provider: "claude", account: "work", configDir: "/c", cwd: "/w", bin: "claude", args: ["hi"], envFile: "/as/host/env/x.sh" };
+  const argv = TmuxHost.programArgv(o, "u-1", "/h.json");
+  assert.deepEqual(argv.slice(0, 2), ["/bin/sh", "-c"]);
+  assert.deepEqual(argv.slice(3), ["sh", "/as/host/env/x.sh", "claude", "--session-id", "u-1", "--settings", "/h.json", "hi"]);
+  // The env file's path and the program's argv are arguments to the script, never part of its text.
+  assert.doesNotMatch(argv[2], /x\.sh|claude/);
+  assert.match(argv[2], /exec "\$@"$/);
+});
+
 test("start refuses names that could break out of argv or env", () => {
   const host = new TmuxHost(tmp(), { socket: "never-used" });
   const base = { provider: "claude", account: "work", configDir: "/c", cwd: "/w", bin: "claude" };
@@ -355,6 +365,33 @@ sleep 30
 
     host.end(s.key);
     assert.equal(fs.existsSync(file), false, "ending the window drops its state");
+  } finally {
+    host.killServer();
+  }
+});
+
+test("a terminal start in the real host: the env file reaches the program and is gone, the exit status is read, closing the view keeps the session", gate, () => {
+  const root = tmp();
+  const socket = `as-test-env-${process.pid}`;
+  const host = new TmuxHost(root, { socket });
+  const seen = path.join(root, "seen");
+  const bin = path.join(root, "fake-claude");
+  // Writes what it got, then ends with status 3 — a program typed in a terminal that the person exits.
+  fs.writeFileSync(bin, `#!/bin/sh\nprintf '%s|%s' "$FROM_SHELL" "$CLAUDE_CONFIG_DIR" > "${seen}"\nexit 3\n`, { mode: 0o755 });
+  const envFile = path.join(root, "env.sh");
+  fs.writeFileSync(envFile, "export FROM_SHELL='it'\\''s mine'\n", { mode: 0o600 });
+  try {
+    const s = host.start({ provider: "claude", account: "work", configDir: "/cfg/work", cwd: root, bin, envFile }, "h");
+    assert.ok(waitFor(() => host.paneState(s.key)?.dead === true), "the program ended");
+    assert.equal(fs.readFileSync(seen, "utf8"), "it's mine|/cfg/work", "the shell's variable and the host's own config dir");
+    assert.equal(fs.existsSync(envFile), false, "the window removed its env file");
+    assert.deepEqual(host.paneState(s.key), { dead: true, status: 3 });
+    host.view(s.key, "term1");
+    host.closeView("term1");
+    assert.equal(spawnSync("tmux", ["-L", socket, "has-session", "-t", "=view-term1"]).status === 0, false, "the view is closed");
+    assert.deepEqual(host.list().map((r) => r.key), [s.key], "closing a view never ends the session");
+    host.end(s.key);
+    assert.equal(host.paneState(s.key), null);
   } finally {
     host.killServer();
   }

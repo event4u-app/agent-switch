@@ -34,6 +34,8 @@ export interface AdapterEnv {
   engineDownSince: number | null;
   plan: NewSessionPlan;
   terminalApp: string;
+  /** How long a session stays quiet before it moves to Done today (a setting; default 15 minutes). */
+  doneAfterMs?: number;
   /** Changed files per session key, as last read (`changes <s> --json`). */
   changes: ReadonlyMap<string, ChangedFile[]>;
   /** Changed files past the list's cap, per session key (`more` of the same read). */
@@ -385,6 +387,11 @@ export function projectLabels(roots: readonly string[]): Map<string, string> {
 }
 
 /** The whole window's data. */
+/** Quiet this long and a session moves to Done today, unless the setting says otherwise. */
+export const DEFAULT_DONE_AFTER_MS = 15 * 60_000;
+/** Quiet longer than this and a session moves to the folded "Older than a day" group. */
+const OLDER_MS = 24 * 3600_000;
+
 export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Data {
   const now = env.now;
   // One row per account, whatever the reads returned (a reload racing a poll can repeat one).
@@ -432,11 +439,21 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
 
   const childCtx: ChildContext = { accountOf: (provider, profile) => { const a = accounts.get(accountId(provider, profile)); return a ? { color: a.color, nearLimit: nearLimit(a) } : undefined; }, needing, now };
   const roots = rows.filter((r) => !r.parent && (r.live || r.mtimeMs >= today));
+  // Active, quiet past the done-after time (Done today), or quiet for over a day (Older).
+  // Something that needs the user or is working never leaves the active list.
+  const doneAfter = env.doneAfterMs ?? DEFAULT_DONE_AFTER_MS;
+  const whenOf = (r: SessionRow, state: string, needsYou: boolean): "active" | "done" | "older" => {
+    const quietFor = state === "needs-you" || state === "working" || needsYou ? 0 : now - r.mtimeMs;
+    if (quietFor > OLDER_MS) return "older";
+    return !(r.live || r.recentlyActive) || quietFor >= doneAfter ? "done" : "active";
+  };
   const sessions: RowSession[] = roots.map((r) => {
     const key = sessionKey(r);
     const pr = prsOf(r)[0];
     const view = sessionFromRow(r, now);
     const children = childrenOf(r, (k) => byKey.get(k), childCtx);
+    const needsYou = needing.has(key) || children.some((c) => c.needsYou);
+    const when = whenOf(r, view.state, needsYou);
     return {
       key,
       title: titleOf(r),
@@ -450,8 +467,8 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       pr: pr ? { number: pr.number, ci: pr.ci, mergeable: pr.mergeable } : null,
       children,
       // D6: a Needs-you item on this session or any descendant.
-      needsYou: needing.has(key) || children.some((c) => c.needsYou),
-      ...(r.live || r.recentlyActive ? {} : { doneToday: true }),
+      needsYou,
+      ...(when === "older" ? { older: true } : when === "done" ? { doneToday: true } : {}),
     };
   });
 
@@ -471,7 +488,9 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
   };
   const table: TableSession[] = rows.map((r) => {
     const pr = prsOf(r)[0];
+    const key = sessionKey(r);
     return {
+      when: whenOf(r, stateOf(r), needing.has(key)),
       key: sessionKey(r),
       title: titleOf(r),
       state: stateOf(r),
@@ -592,6 +611,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       terminal: feeds.openTargets?.terminal ?? null,
       terminals: feeds.openTargets?.terminals ?? [],
       focusTerminal: env.focusTerminal,
+      terminalSync: feeds.terminalSync?.enabled ?? null,
       // Only the desktop apps of a tool, and only where they are installed (spec §7.7).
       agentApps: vm.surfaces.filter((x) => x.kind === "desktop" && x.detected && AGENT_APPS.includes(x.id)).map((x) => ({ id: x.id, label: x.name, tool: x.tool })),
     },

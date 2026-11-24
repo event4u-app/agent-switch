@@ -95,6 +95,15 @@ Then **open a new terminal** (the current one has not read the change).
 `doctor` says *"agent-switch is not on PATH"*, install the CLI globally:
 `npm install -g @event4u/agent-switch`.
 
+### My terminal session keeps running after I closed the window
+
+With `terminal-sync` on, a `claude` or `codex` typed in your terminal runs in
+Agent Switch, and the terminal is only one window onto it. Closing that window
+leaves the session running, like any session started in the app. Join it again
+with `agent-switch host attach <session>` (`agent-switch host list` shows it),
+end it in the app, or end the program with `/exit`. To keep terminal starts in
+the terminal only: `agent-switch terminal-sync off`.
+
 ### An API key overrides my account
 
 If `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`,

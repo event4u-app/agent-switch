@@ -13,7 +13,7 @@ import { PoolsSection } from "../../redesign/screens/pools-panel.js";
 import { UsageHistory, useUsageHistory } from "../../redesign/screens/usage-history.js";
 import { openExternal } from "../../redesign/screens/tools.js";
 import { appRequest, useTrayRequests } from "../../redesign/tray/bridge.js";
-import { getFocusTerminal, getLimitAutoOpen, getStartChoice, setFocusTerminalFlag, setNotifLastRead, setStartChoice } from "../../settings-store.js";
+import { getDoneAfterMin, getFocusTerminal, getLimitAutoOpen, getStartChoice, setFocusTerminalFlag, setNotifLastRead, setStartChoice } from "../../settings-store.js";
 import { AcRoot } from "../../ui/AcRoot.js";
 import { useHomeDir } from "../../lib/paths.js";
 import { Toaster } from "../../ui/Toaster.js";
@@ -261,6 +261,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     terminalApp,
     changes,
     changesMore,
+    doneAfterMs: getDoneAfterMin() * 60_000,
     wantChanges,
     terminals,
     wantTerminal,
