@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useState, type ReactNode } from "react";
-import { Bell, FileDiff, Inbox, Layers, Library, ListTree, Network, PanelLeft, Plus, Search, Settings, TriangleAlert, Wrench } from "lucide-react";
+import { Bell, FileDiff, History, Inbox, Layers, Library, ListTree, Network, PanelLeft, Plus, Search, Settings, TriangleAlert, Wrench } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { AppLogo } from "../ui/AppLogo.js";
 import { Button, IconButton } from "../ui/Button.js";
@@ -26,6 +26,8 @@ export function TitleBar({
   inbox,
   inboxOpen,
   notifications = 0,
+  historyOpen,
+  onHistory,
   onSearch,
   onStart,
   onSettings,
@@ -38,6 +40,9 @@ export function TitleBar({
   inboxOpen?: boolean;
   /** What waits for you, on the bell before Settings (owner, 2026-11-24, as in v2); 0 = no badge. */
   notifications?: number;
+  historyOpen?: boolean;
+  /** The History sheet (as v2); absent: no button. */
+  onHistory?: () => void;
   onSearch: () => void;
   onStart: () => void;
   onSettings: () => void;
@@ -78,6 +83,12 @@ export function TitleBar({
       <Button variant="primary" size="sm" title="New session  ⌘N" onClick={onStart}>
         <Plus /> Start session
       </Button>
+      {/* History, then the bell, then Settings — the order v2 has them in. */}
+      {onHistory && (
+        <IconButton label="History" data-popover-trigger="" aria-pressed={!!historyOpen} active={!!historyOpen} onClick={onHistory}>
+          <History />
+        </IconButton>
+      )}
       {/* The bell, as in v2: always there, opens Needs you and what finished today. */}
       <IconButton label="Notifications" data-popover-trigger="" aria-pressed={!!inboxOpen} active={!!inboxOpen} badge={notifications ? (notifications > 9 ? "9+" : notifications) : undefined} onClick={onInbox}>
         <Bell />
@@ -180,6 +191,7 @@ export function Shell({
   rightWindow,
   overlay,
   actions,
+  historyOpen,
 }: {
   frame: ReturnType<typeof useFrame>;
   health: "ready" | "down";
@@ -195,11 +207,12 @@ export function Shell({
   centre: ReactNode;
   rightWindow: ReactNode;
   overlay?: ReactNode;
-  actions: { onSearch: () => void; onStart: () => void; onSettings: () => void; onInbox: () => void; onRestart: () => void };
+  actions: { onSearch: () => void; onStart: () => void; onSettings: () => void; onInbox: () => void; onRestart: () => void; onHistory?: () => void };
+  historyOpen?: boolean;
 }) {
   return (
     <div data-v3-shell className="relative flex h-full min-h-0 flex-col bg-ac-bg">
-      <TitleBar health={health} inbox={frame.sessionsShown ? null : inbox} inboxOpen={inboxOpen} notifications={inbox.count} {...actions} />
+      <TitleBar health={health} inbox={frame.sessionsShown ? null : inbox} inboxOpen={inboxOpen} notifications={inbox.count} historyOpen={historyOpen} {...actions} />
       <div className="flex min-h-0 flex-1">
         <Stripe side="left" items={leftItems(!frame.sessionsShown && needsYou)} active={frame.sessionsShown ? "sessions" : null} onSelect={frame.selectLeft} />
         {frame.sessionsShown && sessionsWindow}

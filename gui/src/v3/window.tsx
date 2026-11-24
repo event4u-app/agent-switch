@@ -11,7 +11,7 @@ import { cn } from "../lib/utils.js";
 import { ArrowLeftRight, ArrowRightToLine, ClipboardCopy, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, SquareTerminal, Unplug, Wrench, X } from "lucide-react";
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
-import type { IdentityColor, ToolEntry } from "../vm/types.js";
+import type { ActivityEvent, IdentityColor, ToolEntry } from "../vm/types.js";
 import { DecisionSheet, EndDialog, NewSessionDialog, type MoveHow, type NewSessionFacts, type NewSessionPlan, type SheetMove, type SheetSession } from "./dialogs.js";
 import { Shell, useFrame, type PageId } from "./frame.js";
 import { LimitsPopover, LimitsStrip, RoomLeft, type LimitAccount } from "./limits.js";
@@ -22,6 +22,7 @@ const LIMITS_MODEL_X = 695;
 import { answeredThere, NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
 import { limitToOpen, markLimitOpened, openedLimits, wasOpened } from "./adapter/limit-auto.js";
 import { accountOfKey } from "../vm/switch-requests.js";
+import { HistorySheet } from "./history.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession, type StatusTab } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
@@ -48,6 +49,8 @@ export interface V3Data {
   needs: NeedItem[];
   away: AwayDigest | null;
   history: DoneItem[];
+  /** The CLI's activity log, newest first: the History sheet (as v2). Absent = none read. */
+  activity?: ActivityEvent[];
   sessions: RowSession[];
   limits: LimitAccount[];
   accounts: PageAccount[];
@@ -239,7 +242,7 @@ export function V3Window({
   const pages = strip.order.filter(isPageTab).map((id) => id.slice(5) as Page);
   const sessionTabs = strip.order.filter((id) => !isPageTab(id));
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string; at?: Anchor; moved?: BarChipId[] } | { end: string } | { openin: string; at?: Anchor } | { tabMenu: string; x: number; y: number }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "history" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string; at?: Anchor; moved?: BarChipId[] } | { end: string } | { openin: string; at?: Anchor } | { tabMenu: string; x: number; y: number }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
@@ -902,6 +905,10 @@ export function V3Window({
           else act({ type: "palette", entry, newTab });
         }}
       />
+    ) : overlay === "history" ? (
+      <Anchored onClose={close} className="absolute bottom-0 right-0 top-11 z-10">
+        <HistorySheet events={data.activity ?? []} nowMs={data.nowMs} />
+      </Anchored>
     ) : overlay === "inbox" ? (
       // Full height under the title bar, on the right, like v2's notifications sheet (owner, 2026-11-24).
       <Anchored onClose={close} className="absolute bottom-0 right-0 top-11 z-10">
@@ -1019,6 +1026,7 @@ export function V3Window({
       health={data.health.state}
       inbox={{ count: needs.length, ciFailing: needs.some((n) => n.kind === "ci") }}
       inboxOpen={overlay === "inbox"}
+      historyOpen={overlay === "history"}
       needsYou={needs.length > 0}
       blocker={!!next}
       rightWhy={activeSession ? null : "no session in this tab"}
@@ -1033,7 +1041,7 @@ export function V3Window({
           </div>
         ))
       }
-      actions={{ onSearch: () => setOverlay("palette"), onStart: () => setOverlay("new"), onSettings: () => openPage("settings"), onInbox: () => setOverlay((o) => (o === "inbox" ? null : "inbox")), onRestart: () => act({ type: "restart-engine" }) }}
+      actions={{ onSearch: () => setOverlay("palette"), onStart: () => setOverlay("new"), onSettings: () => openPage("settings"), onInbox: () => setOverlay((o) => (o === "inbox" ? null : "inbox")), onHistory: () => setOverlay((o) => (o === "history" ? null : "history")), onRestart: () => act({ type: "restart-engine" }) }}
     />
   );
 }

@@ -24,13 +24,15 @@ export interface V3Feeds {
   remote: RemoteState | null;
   /** `sessions --provider codex --json`; the 2.11 poll reads Claude only. */
   codexRows: SessionRow[];
+  /** `activity --limit 200 --json`: the History sheet (owner, 2026-11-24, as v2). */
+  activity: ipc.ActivityEntry[] | null;
   /** Feed name → epoch ms of its last good read. */
   readAt: Partial<Record<FeedName, number>>;
 }
 
-export type FeedName = "needs" | "engine" | "host" | "library" | "openTargets" | "agents" | "remote" | "codexRows";
+export type FeedName = "needs" | "engine" | "host" | "library" | "openTargets" | "agents" | "remote" | "codexRows" | "activity";
 
-export const emptyFeeds = (): V3Feeds => ({ needs: null, engine: null, host: null, library: null, openTargets: null, agents: null, remote: null, codexRows: [], readAt: {} });
+export const emptyFeeds = (): V3Feeds => ({ needs: null, engine: null, host: null, library: null, openTargets: null, agents: null, remote: null, codexRows: [], activity: null, readAt: {} });
 
 export interface FeedDeps {
   needs: () => Promise<NonNullable<V3Feeds["needs"]>>;
@@ -41,6 +43,8 @@ export interface FeedDeps {
   agents: () => Promise<AgentsList>;
   remote: () => Promise<RemoteState>;
   codexRows: () => Promise<SessionRow[]>;
+  /** Optional: a caller without it simply has no History. */
+  activity?: () => Promise<ipc.ActivityEntry[]>;
 }
 
 export const realDeps: FeedDeps = {
@@ -52,12 +56,13 @@ export const realDeps: FeedDeps = {
   agents: ipc.agentsList,
   remote: ipc.remoteStatus,
   codexRows: () => ipc.listSessions(undefined, 20, "codex"),
+  activity: () => ipc.listActivity(200),
 };
 
 /** One poll round. `slow` adds the reads that change rarely. */
 export async function pollFeeds(prev: V3Feeds, deps: FeedDeps, slow: boolean, now: number): Promise<V3Feeds> {
-  const names: FeedName[] = ["needs", "engine", "host", "codexRows", ...(slow ? (["library", "openTargets", "agents", "remote"] as FeedName[]) : [])];
-  const results = await Promise.allSettled(names.map((n) => deps[n]()));
+  const names: FeedName[] = ["needs", "engine", "host", "codexRows", ...(deps.activity ? (["activity"] as FeedName[]) : []), ...(slow ? (["library", "openTargets", "agents", "remote"] as FeedName[]) : [])];
+  const results = await Promise.allSettled(names.map((n) => deps[n]!()));
   const next: V3Feeds = { ...prev, readAt: { ...prev.readAt } };
   results.forEach((r, i) => {
     if (r.status !== "fulfilled") return;

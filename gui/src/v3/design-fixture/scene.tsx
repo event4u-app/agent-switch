@@ -198,6 +198,16 @@ export function makeData(o: { theme: string; accent: Accent; health?: string; aw
     { id: "h2", who: "v3 engine", what: "subagent “Explore” done", doneAt: iso(12 * MIN) },
     { id: "h3", who: "work", what: "refreshed its sign-in", doneAt: iso(H) },
   ],
+  // The CLI's activity log as the History sheet reads it (activityFromEntries), newest first.
+  activity: [
+    { id: "a1", at: NOW - 4 * MIN, kind: "start" as const, text: "Theme system, Darcula default: started on personal", detail: "folder rule ~/code/agent-switch → pool day" },
+    { id: "a2", at: NOW - 21 * MIN, kind: "switch" as const, text: "Release plan agent-config 1.9: moved to work", detail: "side reached 94% of 5h" },
+    { id: "a3", at: NOW - 28 * MIN, kind: "limit" as const, text: "side: near its 5h limit", detail: "94% used, resets in 1h 18m" },
+    { id: "a4", at: NOW - H, kind: "refresh" as const, text: "work: sign-in refreshed" },
+    { id: "a5", at: NOW - 2 * H, kind: "login" as const, text: "Codex · personal: sign-in failed", detail: "stored login expired", ok: false },
+    { id: "a6", at: NOW - 5 * H, kind: "update" as const, text: "Agent Switch updated to 3.0.0-beta.4" },
+    { id: "a7", at: NOW - 26 * H, kind: "guard" as const, text: "Guard policy loaded", detail: "2 rules" },
+  ],
   sessions: SESSIONS,
   limits: LIMITS,
   accounts: LIMITS.map((a, i) => ({ ...a, email: a.tool === "codex" ? null : `${a.name}@example.com`, label: ["Work", "Personal", "Other", "Work", "Personal"][i], isDefault: a.name === "work", running: [2, 2, 1, 1, 0][i] })),
