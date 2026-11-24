@@ -175,15 +175,9 @@ export function LimitsStrip({ accounts, nowMs, openKey, currentKey, onOpen, onSi
   const tab = picked && tools.includes(picked) ? picked : currentTool && tools.includes(currentTool) ? currentTool : (tools[0] ?? "claude");
   const shown = tools.length > 1 ? accounts.filter((a) => a.tool === tab) : [...accounts.filter((a) => a.tool === "claude"), ...accounts.filter((a) => a.tool === "codex")];
   return (
-    <section aria-label="Limits" className="relative shrink-0 border-t border-ac-line px-1.5 pb-1.5 pt-1">
-      <div className={cn(ROW_GRID, "h-7 px-2 text-[11px]")}>
-        <span className="font-semibold text-ac-soft">
-          Limits <span className="font-normal text-ac-muted">· 5h</span>
-        </span>
-        <span className="col-span-3 justify-self-end text-ac-muted">resets</span>
-      </div>
+    <section aria-label="Limits" className="relative shrink-0 border-t border-ac-line px-1.5 pb-1.5 pt-1.5">
       {tools.length > 1 && (
-        <div className="px-1 pb-1.5">
+        <div className="px-1">
           <Segmented
             label="Tool"
             size="sm"
@@ -202,6 +196,13 @@ export function LimitsStrip({ accounts, nowMs, openKey, currentKey, onOpen, onSi
           />
         </div>
       )}
+      {/* The head sits under the switch (owner, 2026-11-24), right above the rows it names. */}
+      <div className={cn(ROW_GRID, "h-7 px-2 text-[11px]")}>
+        <span className="font-semibold text-ac-soft">
+          Limits <span className="font-normal text-ac-muted">· 5h</span>
+        </span>
+        <span className="col-span-3 justify-self-end text-ac-muted">resets</span>
+      </div>
       <div data-limit-rows="" role="region" aria-label={tools.length > 1 ? `${tab === "claude" ? "Claude" : "Codex"} limits` : undefined} className="mx-1 h-[106px] overflow-y-auto rounded-md border border-ac-line bg-ac-bg p-1">
         {shown.map((a) => (
           <LimitRow key={a.key} a={a} nowMs={nowMs} open={a.key === openKey} current={a.key === currentKey} toolShown={tools.length > 1} onOpen={onOpen} onSignIn={onSignIn} />
