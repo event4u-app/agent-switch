@@ -75,7 +75,8 @@ export function Segmented<V extends string>({
               "inline-flex h-full items-center justify-center whitespace-nowrap rounded-md px-3 text-xs font-medium transition-colors",
               fill && "flex-1",
               selected
-                ? "bg-ac-raise text-ac-text"
+                ? // The chosen option takes the accent set in Settings (owner, 2026-11-24).
+                  "bg-ac-brand-tint text-ac-brand-text shadow-[inset_0_0_0_1px_var(--ac-brand-line)]"
                 : o.disabled
                   ? "cursor-not-allowed text-ac-faint"
                   : "text-ac-muted hover:bg-ac-raise hover:text-ac-text",
