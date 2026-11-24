@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import * as ipc from "../../ipc.js";
 import type { AsEvent } from "../timeline.js";
+import { errorLine, recordDebug } from "../../debug-log.js";
 
 export type BridgeStatus = "starting" | "ready" | "closed" | "error";
 
@@ -14,13 +15,17 @@ export interface BridgeState {
   status: BridgeStatus;
   error: string | null;
   queued: number;
-  mode: ipc.BridgeSpec["mode"];
+  /** The mode the chat runs in: as asked, then as the bridge reports it (an inherited one). */
+  mode: ipc.ChatMode;
   /** What the agent reported: the real session key (a new chat gets one), model, slash commands. */
   session: { key: string; model: string | null; commands: string[] } | null;
   /** The loaded history starts at index `from`; `prompts` lie before it. Null when all of it is loaded. */
   earlier: { from: number; prompts: number } | null;
   /** Cards from the history: asked before this chat opened, so this bridge cannot answer them. */
   stale: ReadonlySet<string>;
+  /** A turn this bridge started has not ended. Never read from the history: a transcript
+   *  often has no record of a turn's end, so its last turn would look open forever. */
+  turnOpen: boolean;
 }
 
 export interface BridgeActions {
@@ -35,7 +40,7 @@ export interface BridgeActions {
   /** Codex: ask the agent to review the uncommitted changes. */
   review: () => void;
   setModel: (model: string) => void;
-  setMode: (mode: ipc.BridgeSpec["mode"]) => void;
+  setMode: (mode: ipc.ChatMode) => void;
   close: () => void;
   /** Read the turns before the loaded history and put them in front. */
   loadEarlier: () => Promise<void>;
@@ -62,6 +67,17 @@ export function cardIds(events: readonly AsEvent[]): string[] {
 }
 
 /** Parse one bridge output line. Pure. */
+/** A mode the chat can show and run, or null. Pure. */
+export function asChatMode(m: unknown): ipc.ChatMode | null {
+  if (m === "manual") return "default";
+  return (ipc.CHAT_MODES as readonly unknown[]).includes(m) ? (m as ipc.ChatMode) : null;
+}
+
+/** What the mode picker shows before the bridge reports: an inherited mode reads as the default until then. */
+function shownMode(m: ipc.BridgeSpec["mode"] | undefined): ipc.ChatMode {
+  return asChatMode(m) ?? "default";
+}
+
 export function bridgeLine(line: string): { event?: AsEvent; bridge?: { kind: string; message?: string; count?: number; mode?: string; key?: string; model?: string | null; commands?: string[] } } {
   try {
     const o = JSON.parse(line) as { event?: AsEvent; bridge?: string; message?: string; count?: number; mode?: string; key?: string; model?: string | null; commands?: unknown };
@@ -84,23 +100,27 @@ export function failed(p: BridgeState, message: string): BridgeState {
 }
 
 export function useBridge(spec: ipc.BridgeSpec | null, deps: BridgeDeps = realDeps): BridgeState & BridgeActions {
-  const [s, set] = useState<BridgeState>({ events: [], status: "starting", error: null, queued: 0, mode: spec?.mode ?? "default", session: null, earlier: null, stale: new Set() });
+  const [s, set] = useState<BridgeState>({ events: [], status: "starting", error: null, queued: 0, mode: shownMode(spec?.mode), session: null, earlier: null, stale: new Set(), turnOpen: false });
   const proc = useRef<ipc.BridgeProcess | null>(null);
   const specKey = spec ? JSON.stringify(spec) : null;
 
   useEffect(() => {
     if (!spec) return;
     let alive = true;
-    set({ events: [], status: "starting", error: null, queued: 0, mode: spec.mode, session: null, earlier: null, stale: new Set() });
+    set({ events: [], status: "starting", error: null, queued: 0, mode: shownMode(spec.mode), session: null, earlier: null, stale: new Set(), turnOpen: false });
     const onLine = (line: string) => {
       if (!alive) return;
       const r = bridgeLine(line);
-      if (r.event) set((p) => ({ ...p, events: [...p.events, r.event!] }));
-      else if (r.bridge?.kind === "ready") set((p) => ({ ...p, status: "ready" }));
+      if (r.event) {
+        const t = r.event.t;
+        set((p) => ({ ...p, events: [...p.events, r.event!], turnOpen: t === "turn" ? true : t === "turn.end" ? false : p.turnOpen }));
+      }
+      else if (r.bridge?.kind === "ready") set((p) => ({ ...p, status: "ready", mode: asChatMode(r.bridge!.mode) ?? p.mode }));
       else if (r.bridge?.kind === "queued") set((p) => ({ ...p, queued: r.bridge!.count ?? 0 }));
-      else if (r.bridge?.kind === "session" && r.bridge.key) set((p) => ({ ...p, session: { key: r.bridge!.key!, model: r.bridge!.model ?? null, commands: r.bridge!.commands ?? [] } }));
+      // The agent says which mode it really runs in (`manual` is the chat's `default`).
+      else if (r.bridge?.kind === "session" && r.bridge.key) set((p) => ({ ...p, mode: asChatMode(r.bridge!.mode) ?? p.mode, session: { key: r.bridge!.key!, model: r.bridge!.model ?? null, commands: r.bridge!.commands ?? [] } }));
       else if (r.bridge?.kind === "error") set((p) => failed(p, r.bridge!.message ?? "bridge error"));
-      else if (r.bridge?.kind === "exit") set((p) => ({ ...p, status: p.status === "error" ? "error" : "closed" }));
+      else if (r.bridge?.kind === "exit") set((p) => ({ ...p, status: p.status === "error" ? "error" : "closed", turnOpen: false }));
     };
     (async () => {
       // History first, so the live events continue it.
@@ -108,8 +128,19 @@ export function useBridge(spec: ipc.BridgeSpec | null, deps: BridgeDeps = realDe
       const h = "key" in spec ? await deps.history(spec.key).catch(() => none) : none;
       if (!alive) return;
       set((p) => ({ ...p, events: [...h.events, ...p.events], earlier: h.from > 0 ? { from: h.from, prompts: h.earlierPrompts } : null, stale: new Set([...p.stale, ...cardIds(h.events)]) }));
-      proc.current = await deps.open(spec, onLine, () => alive && set((p) => ({ ...p, status: p.status === "error" ? "error" : "closed" })));
-    })().catch((e: unknown) => alive && set((p) => ({ ...p, status: "error", error: e instanceof Error ? e.message : String(e) })));
+      const child = await deps.open(spec, onLine, (code, stderr) => {
+        // A bridge that failed (exit code) is in the debug log with why; a closed chat ends with 0.
+        if (code !== 0) recordDebug({ kind: "bridge", what: "chat process ended", key: "key" in spec ? spec.key : undefined, ok: false, error: errorLine(stderr), detail: { code: code ?? "signal" } });
+        if (alive) set((p) => ({ ...p, status: p.status === "error" ? "error" : "closed", turnOpen: false }));
+      });
+      // Closed while it was starting: nobody would ever close this bridge, and it would hold the session.
+      if (!alive) return void child.send({ cmd: "close" }).catch(() => {});
+      proc.current = child;
+    })().catch((e: unknown) => {
+      const message = e instanceof Error ? e.message : String(e);
+      recordDebug({ kind: "bridge", what: "chat did not start", key: "key" in spec ? spec.key : undefined, ok: false, error: message });
+      if (alive) set((p) => ({ ...p, status: "error", error: message }));
+    });
     return () => {
       alive = false;
       void proc.current?.send({ cmd: "close" }).catch(() => {});
@@ -119,7 +150,16 @@ export function useBridge(spec: ipc.BridgeSpec | null, deps: BridgeDeps = realDe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [specKey, deps]);
 
-  const send = useCallback((c: object) => void proc.current?.send(c).catch((e: unknown) => set((p) => failed(p, e instanceof Error ? e.message : String(e)))), []);
+  const send = useCallback(
+    (c: object) =>
+      void proc.current?.send(c).catch((e: unknown) => {
+        const message = e instanceof Error ? e.message : String(e);
+        // What was sent stays out: only the command's name and why it did not reach the chat.
+        recordDebug({ kind: "bridge", what: `${String((c as { cmd?: unknown }).cmd ?? "command")} did not reach the chat`, ok: false, error: message });
+        set((p) => failed(p, message));
+      }),
+    [],
+  );
   return {
     ...s,
     send: (text, attachments) => send({ cmd: "send", text, ...(attachments?.length ? { attachments } : {}) }),

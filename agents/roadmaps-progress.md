@@ -2,14 +2,14 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change. A repository that does not commit this file has no git history for it — regenerate to see the current state.
 >
-> 1 open roadmap · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
+> 2 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
 
 ## Overall
 
-**16 / 17 steps done · 94%**
+**27 / 29 steps done · 93%**
 
 ```text
-██████████████████████████████████████░░   94%
+█████████████████████████████████████░░░   93%
 ```
 
 ## Open roadmaps
@@ -17,6 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 1 | 16 | 0 | 0 | 0 | █████████░ 94% |
+| 2 | [road-to-terminal-sessions-in-sync.md](roadmaps/road-to-terminal-sessions-in-sync.md) | 6 | 12 | 1 | 11 | 0 | 0 | 0 | █████████░ 92% |
 
 ---
 
@@ -60,11 +61,25 @@
 | 5 | A browser agent-switch controls | 🟡 in progress | 1 | 2 | 0 | 0 | 67% |
 | 6 | Hints that save the account | ✅ done | 0 | 2 | 0 | 0 | 100% |
 
+### [road-to-terminal-sessions-in-sync.md](roadmaps/road-to-terminal-sessions-in-sync.md)
+
+**terminal sessions in sync** — 11 / 12 done (92%)
+
+| # | Phase | State | Open | Done | Deferred | Cancelled | % |
+|---|---|---|---:|---:|---:|---:|---:|
+| 1 | The plan, decided without side effects | ✅ done | 0 | 2 | 0 | 0 | 100% |
+| 2 | The switch | ✅ done | 0 | 2 | 0 | 0 | 100% |
+| 3 | `agent-switch launch` | ✅ done | 0 | 2 | 0 | 0 | 100% |
+| 4 | The wrappers use it | ✅ done | 0 | 1 | 0 | 0 | 100% |
+| 5 | Typing from both sides at once (G3) | ✅ done | 0 | 2 | 0 | 0 | 100% |
+| 6 | Docs and delivery | 🟡 in progress | 1 | 2 | 0 | 0 | 67% |
+
 ## Age
 
 Days since each active roadmap landed at its path and since its last ticked step, read from `git log` (`—` = unknown, or never ticked).
 
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
-| [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 18 | 18 |
+| [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 19 | 19 |
+| [road-to-terminal-sessions-in-sync.md](roadmaps/road-to-terminal-sessions-in-sync.md) | — | — |
 

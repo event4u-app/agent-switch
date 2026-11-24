@@ -30,6 +30,39 @@ const flush = () => act(async () => {
 });
 
 describe("useBridge", () => {
+  it("a chat closed while its bridge was starting closes that bridge once it is up, so it never holds the session", async () => {
+    const f = fake();
+    let started: () => void = () => {};
+    const gate = new Promise<void>((r) => (started = r));
+    const open = f.deps.open;
+    const deps: BridgeDeps = { ...f.deps, open: async (...a) => (await gate, open(...a)) };
+    const { unmount } = render(<Probe spec={{ key: "claude/w/s1", mode: "default" }} deps={deps} />);
+    await flush();
+    unmount();
+    started();
+    await flush();
+    expect(f.sent).toEqual([{ cmd: "close" }]);
+  });
+
+  it("a turn left open in the history is not a running turn; only the bridge's own turn and turn.end move it", async () => {
+    const f = fake();
+    render(<Probe spec={{ key: "claude/w/s1", mode: "default" }} deps={f.deps} />);
+    await flush();
+    f.emit({ bridge: "ready", key: "claude/w/s1", mode: "default" });
+    await flush();
+    expect(api!.turnOpen).toBe(false);
+    f.emit({ event: { t: "turn", id: "l1", at: null } });
+    await flush();
+    expect(api!.turnOpen).toBe(true);
+    f.emit({ event: { t: "turn.end", ok: true, durationMs: 1, costUsd: null } });
+    await flush();
+    expect(api!.turnOpen).toBe(false);
+    f.emit({ event: { t: "turn", id: "l2", at: null } });
+    f.emit({ bridge: "exit", code: 1 });
+    await flush();
+    expect(api!.turnOpen).toBe(false);
+  });
+
   it("history first, then live events; session, queue, exit; commands go out as JSON", async () => {
     const f = fake();
     render(<Probe spec={{ key: "claude/w/s1", mode: "default" }} deps={f.deps} />);

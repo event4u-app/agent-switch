@@ -129,7 +129,7 @@ export function resolveDir(
  * a free one or shares the best. The distinct exit code lets the wrapper block
  * on that refusal without ever blocking on a missing or older `agent-switch`.
  */
-export async function cmdDir(providerId: ProviderId, guarded = false, json = false, plain = false, exclude: readonly string[] = []): Promise<void> {
+export async function cmdDir(providerId: ProviderId, guarded = false, json = false, plain = false, exclude: readonly string[] = [], launchable = false): Promise<void> {
   const resolved = resolveDir(providerId, plain, process.cwd(), exclude);
   const r = guarded && !json && resolved.ask && canAsk({ stdin: !!process.stdin.isTTY, stderr: !!process.stderr.isTTY }) ? await askForAccount(providerId, resolved) : resolved;
   if (json) {
@@ -169,7 +169,8 @@ export async function cmdDir(providerId: ProviderId, guarded = false, json = fal
       process.exit(GUARD_REFUSED_EXIT);
     }
   }
-  console.log(configDir(providerId, name));
+  // `--launch`: the wrapper may hand this start to `launch` (src/commands/launch.ts); the prefix says this CLI has it.
+  console.log(`${launchable && guarded && (providerId === "claude" || providerId === "codex") ? "launch:" : ""}${configDir(providerId, name)}`);
   if (!guarded) return;
   // The resolver already moved off a busy account where a free one exists, so
   // a wrapped start that lands on a busy account has no better option: it is

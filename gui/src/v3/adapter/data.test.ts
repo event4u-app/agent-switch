@@ -100,7 +100,7 @@ describe("toV3Data", () => {
     const startOfToday = new Date(NOW).setHours(0, 0, 0, 0);
     expect(d.sessions.every((s) => {
       const r = rows.find((x) => sessionKey(x) === s.key)!;
-      return !r.parent && (r.live || r.mtimeMs >= startOfToday) && (s.doneToday === true) === !r.live;
+      return !r.parent && (r.live || r.mtimeMs >= startOfToday) && (r.live || s.doneToday === true);
     })).toBe(true);
   });
 
@@ -113,6 +113,25 @@ describe("toV3Data", () => {
     const d = toV3Data(vmWith([account("work")], rows), emptyFeeds(), env());
     const done = (id: string) => d.sessions.find((s) => s.key === `claude/work/${id}`)?.doneToday ?? false;
     expect([done("recent"), done("done"), done("live")]).toEqual([false, true, false]);
+  });
+
+  it("a session quiet for the done-after time moves to Done today; one quiet for over a day moves to Older; one that needs you stays", () => {
+    const H = 3600_000;
+    const rows = [
+      row("busy", { mtimeMs: NOW - 2 * 60_000 }),
+      row("quiet", { mtimeMs: NOW - 20 * 60_000 }),
+      row("stale", { mtimeMs: NOW - 30 * H }),
+      row("asks", { mtimeMs: NOW - 30 * H, waiting: true }),
+    ];
+    const at = (d: ReturnType<typeof toV3Data>, id: string) => {
+      const x = d.sessions.find((s) => s.key === `claude/work/${id}`)!;
+      return x.older ? "older" : x.doneToday ? "done" : "active";
+    };
+    const d = toV3Data(vmWith([account("work")], rows), emptyFeeds(), env());
+    expect(["busy", "quiet", "stale", "asks"].map((id) => at(d, id))).toEqual(["active", "done", "older", "active"]);
+    // The time is a setting: at 30 minutes the 20-minute-quiet session is still active.
+    const later = toV3Data(vmWith([account("work")], rows), emptyFeeds(), env({ doneAfterMs: 30 * 60_000 }));
+    expect(at(later, "quiet")).toBe("active");
   });
 
   it("an account's routines reach its Accounts-page row; absent stays absent", () => {
@@ -261,7 +280,7 @@ describe("toV3Data", () => {
   it("Open-in: agent apps never reach the settings list", () => {
     const feeds = { ...emptyFeeds(), openTargets: { default: "vscode", perRepo: { "/r": "finder" }, lastUsed: "finder", targets: [{ target: "vscode", label: "VS Code", kind: "editor" as const, installed: true }], terminal: "iterm", terminals: [{ id: "iterm", name: "iTerm2", installed: true }] } };
     const d = toV3Data(emptyViewModel(NOW), feeds, env({ focusTerminal: false }));
-    expect(d.openIn).toEqual({ targets: [{ target: "vscode", label: "VS Code", kind: "editor", installed: true }], defaultTarget: "vscode", lastUsed: "finder", perRepo: { "/r": "finder" }, focusTerminal: false, agentApps: [], terminal: "iterm", terminals: [{ id: "iterm", name: "iTerm2", installed: true }] });
+    expect(d.openIn).toEqual({ targets: [{ target: "vscode", label: "VS Code", kind: "editor", installed: true }], defaultTarget: "vscode", lastUsed: "finder", perRepo: { "/r": "finder" }, focusTerminal: false, terminalSync: null, agentApps: [], terminal: "iterm", terminals: [{ id: "iterm", name: "iTerm2", installed: true }] });
     expect(d.openIn.targets.some((t) => t.kind === "agent-app")).toBe(false);
   });
 });

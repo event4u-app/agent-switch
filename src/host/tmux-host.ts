@@ -70,7 +70,13 @@ export interface StartOptions {
   env?: Record<string, string>;
   /** Claude only: a session id to use instead of a fresh one. */
   sessionId?: string;
+  /** A 0600 sh file of `export` lines the window sources and deletes before the program starts:
+   *  the environment of the shell a terminal start came from, kept out of tmux's argv. */
+  envFile?: string;
 }
+
+/** Sources the env file, removes it, then becomes the program (no extra process stays). */
+const WITH_ENV_FILE = '. "$1" && rm -f "$1" && shift && exec "$@"';
 
 // Antigravity reads its account from HOME (src/providers.ts).
 const ENV_FOR: Record<string, string> = { claude: "CLAUDE_CONFIG_DIR", codex: "CODEX_HOME", antigravity: "HOME" };
@@ -155,7 +161,8 @@ export class TmuxHost {
       if (!resuming) argv.push("--session-id", sessionId);
       if (settingsFile) argv.push("--settings", settingsFile);
     }
-    return [...argv, ...(o.args ?? [])];
+    const program = [...argv, ...(o.args ?? [])];
+    return o.envFile ? ["/bin/sh", "-c", WITH_ENV_FILE, "sh", o.envFile, ...program] : program;
   }
 
   /**
@@ -304,15 +311,33 @@ export class TmuxHost {
     if (!this.tmux(["has-session", "-t", `=${name}`]).ok) {
       const r = this.tmux(["new-session", "-d", "-s", name, "-t", `=${HOST_SESSION}`]);
       if (!r.ok) throw new Error(`tmux could not open a view: ${r.err}`);
-      this.tmux(["set-option", "-t", `=${name}`, "destroy-unattached", "on"]);
     }
     // A view shows one session. tmux's status line would list every hosted window (other accounts'
     // too), and its prefix would take Ctrl-B, Claude Code's own key, and let C-b n move the view to
     // another agent while the tab names this one. Set on every view, also one a viewer already has.
-    const view = (opt: string, value: string) => ["set-option", "-t", `=${name}`, opt, value];
+    // set-option takes a pane target: `=name` alone is refused as "no such session", the colon makes it the session.
+    const view = (opt: string, value: string) => ["set-option", "-t", `=${name}:`, opt, value];
     this.tmux([...view("status", "off"), ";", ...view("prefix", "None"), ";", ...view("prefix2", "None")]);
     this.tmux(["select-window", "-t", `=${name}:${s.window}`]);
-    return [this.tmuxBin, "-L", this.socket, "-f", "/dev/null", "attach-session", "-t", `=${name}`];
+    // destroy-unattached ends a session with no client at once, so it is set only once the viewer is in.
+    return [this.tmuxBin, "-L", this.socket, "-f", "/dev/null", "attach-session", "-t", `=${name}`, ";", ...view("destroy-unattached", "on")];
+  }
+
+  /** Whether the program in a hosted window has ended, and its exit status; null when the window is gone. */
+  paneState(key: string): { dead: boolean; status: number | null } | null {
+    const s = this.readRegistry()[key];
+    if (!s) return null;
+    const r = this.tmux(["display-message", "-p", "-t", s.window, "#{pane_dead} #{pane_dead_status}"]);
+    if (!r.ok) return null;
+    const [dead, status] = r.out.trim().split(" ");
+    const n = Number(status);
+    return { dead: dead === "1", status: status !== "" && Number.isFinite(n) ? n : null };
+  }
+
+  /** Close one viewer's view (its terminal returns); the hosted session is not touched. */
+  closeView(viewerId: string): void {
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(viewerId)) throw new Error("bad viewer id");
+    this.tmux(["kill-session", "-t", `=view-${viewerId}`]);
   }
 
   /** End a hosted session: kill its window and forget it. Explicit, never a side effect of closing a view. */

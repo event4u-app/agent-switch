@@ -13,6 +13,7 @@ function deps(over: Partial<FeedDeps> = {}): FeedDeps {
     library: ok({ autoKeep: true, vaultBytes: 0, entries: [] }),
     openTargets: ok({ default: null, perRepo: {}, lastUsed: null, targets: [], terminal: null, terminals: [] }),
     agents: ok({ agents: [], suggestions: [] }),
+    terminalSync: ok({ enabled: true }),
     remote: ok({ remoteControlAccounts: [], ssh: false }),
     codexRows: ok([]),
     ...over,
@@ -33,7 +34,7 @@ describe("pollFeeds", () => {
 
   it("a slow round reads everything", async () => {
     const f = await pollFeeds(emptyFeeds(), deps(), true, 5);
-    expect(Object.keys(f.readAt).sort()).toEqual(["agents", "codexRows", "engine", "host", "library", "needs", "openTargets", "remote"]);
+    expect(Object.keys(f.readAt).sort()).toEqual(["agents", "codexRows", "engine", "host", "library", "needs", "openTargets", "remote", "terminalSync"]);
   });
 
   it("a failing read keeps the last good value and its time", async () => {
@@ -47,7 +48,7 @@ describe("pollFeeds", () => {
 
   it("everything failing on the first read leaves the empty state", async () => {
     const all = fail();
-    const f = await pollFeeds(emptyFeeds(), { needs: all, engine: all, host: all, library: all, openTargets: all, agents: all, remote: all, codexRows: all }, true, 1);
+    const f = await pollFeeds(emptyFeeds(), { needs: all, engine: all, host: all, library: all, openTargets: all, agents: all, remote: all, terminalSync: all, codexRows: all }, true, 1);
     expect(f).toEqual(emptyFeeds());
   });
 });

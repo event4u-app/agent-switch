@@ -48,7 +48,7 @@
             },
             "--mode",
             {
-              "validator": "default|acceptEdits|plan"
+              "validator": "inherit|default|acceptEdits|plan|auto"
             }
           ]
         },
@@ -62,7 +62,7 @@
             },
             "--mode",
             {
-              "validator": "default|acceptEdits|plan"
+              "validator": "inherit|default|acceptEdits|plan|auto"
             },
             "--model",
             {
@@ -89,7 +89,7 @@
             },
             "--mode",
             {
-              "validator": "default|acceptEdits|plan"
+              "validator": "inherit|default|acceptEdits|plan|auto"
             }
           ]
         },
@@ -112,7 +112,7 @@
             },
             "--mode",
             {
-              "validator": "default|acceptEdits|plan"
+              "validator": "inherit|default|acceptEdits|plan|auto"
             },
             "--model",
             {

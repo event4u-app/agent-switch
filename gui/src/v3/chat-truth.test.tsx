@@ -51,6 +51,8 @@ function chat(over: Partial<Chat> = {}): Chat {
     setMode: vi.fn(),
     close: vi.fn(),
     ...over,
+    // As a live bridge that sent all of these events would report it.
+    turnOpen: over.turnOpen ?? fold(over.events ?? live).running,
   };
 }
 

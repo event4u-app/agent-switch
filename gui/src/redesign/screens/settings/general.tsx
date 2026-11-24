@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { LogOut, MessageCircle, Star } from "lucide-react";
+import { FileText, LogOut, MessageCircle, Star } from "lucide-react";
 import { setLanguagePref, t, type LanguagePref } from "../../../i18n/index.js";
+import { debugLog } from "../../../debug-log.js";
 import * as ipc from "../../../ipc.js";
 import {
   getAutoRefreshLimits,
@@ -65,6 +66,14 @@ export function GeneralSettings() {
   const [autoRefresh, setAutoRefresh] = usePref(getAutoRefreshLimits, writeAutoRefresh);
   const [refreshMinutes, setRefresh] = usePref(getRefreshMinutes, setRefreshMinutes);
   const [devMode, setDevMode] = usePref(() => IS_DEV && getDevMode(), setDevModeFlag);
+  const [debugLogOn, setDebugLogState] = useState(() => debugLog()?.enabled() ?? true);
+  // The CLI's switch first (every process obeys it); the app follows only once it took.
+  const setDebugLogOn = (on: boolean) =>
+    void run(async () => {
+      await ipc.setDebugLogFile(on);
+      debugLog()?.setEnabled(on);
+      setDebugLogState(on);
+    });
   const [language, setLanguage] = usePref<LanguagePref>(getLanguagePref, setLanguagePref);
   const on = autostart ?? false;
 
@@ -209,6 +218,14 @@ export function GeneralSettings() {
           }
         >
           <Switch label={t("settings.general.devMode")} checked={devMode} disabled={!IS_DEV} onChange={setDevMode} />
+        </SettingRow>
+        <SettingRow title={t("settings.general.debugLog")} detail={t("settings.general.debugLogDetail")}>
+          <span className="flex items-center gap-2">
+            <Button size="sm" onClick={() => void run(() => ipc.revealDebugLog())}>
+              <FileText /> {t("settings.general.debugLogShow")}
+            </Button>
+            <Switch label={t("settings.general.debugLog")} checked={debugLogOn} onChange={setDebugLogOn} />
+          </span>
         </SettingRow>
       </SettingGroup>
 

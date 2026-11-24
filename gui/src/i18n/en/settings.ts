@@ -54,6 +54,10 @@ export const settings = {
   "settings.general.devModeDetail":
     "Adds in-app test helpers: generate 25 test notifications in the bell, force a near-limit suggestion, pet bubble tests and poses. Dev builds only.",
   "settings.general.devModeReason": "This is a release build.",
+  "settings.general.debugLog": "Debug log",
+  "settings.general.debugLogDetail":
+    "Keeps the last 100 things you did in the app and what came of them — failed calls, chat and view switches, errors — so a bug can be traced. Never prompts, messages or file contents. Stored in ~/.agent-switch/debug-log.jsonl.",
+  "settings.general.debugLogShow": "Show file",
   "settings.general.support": "Support Agent Switch",
   "settings.general.supportDetail": "Free & open source — stars, votes and shares help other developers find it.",
   "settings.general.starOnGitHub": "Star on GitHub",
@@ -322,6 +326,8 @@ export const settings = {
   "settings.advanced.windowPrevious": "Previous",
   "settings.advanced.chatMarkdown": "Format chat replies",
   "settings.advanced.chatMarkdownDetail": "Tables, code, diffs and collapsible sections in agent replies. Off shows every reply as plain text.",
+  "settings.advanced.doneAfter": "Done today after",
+  "settings.advanced.doneAfterDetail": "A session quiet this long leaves the session list and counts under Done today; quiet for over a day, under Older than a day. One that needs you or is working stays.",
   "settings.advanced.sameAccount": "Same account in two places",
   "settings.advanced.sameAccountDetail": "Warn is safe for most setups; Block only for sign-ins that break when shared.",
   "settings.advanced.policyNotRead": "The current policy wasn't read — pick one to set it.",

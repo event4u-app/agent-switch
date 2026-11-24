@@ -198,7 +198,7 @@ repos or the web research add to it.
       the daemon and `continue` never can.
       verify: P2.1 green; a test that the daemon's `continueHosted` has no way
       to set the override.
-- [ ] **P2.3 Wait for a person's draft.** Before an automated send, read the
+- [x] **P2.3 Wait for a person's draft.** *Done in `road-to-terminal-sessions-in-sync` 5.2 (2026-11-24): the wait and the check before Enter read the attached clients' activity; the input line is not re-read before Enter, because a long or pasted text does not come back as typed.* Before an automated send, read the
       attached view clients' last activity (`tmux list-clients -F
       '#{client_activity}'` on the private server); if a person typed within
       the last 3 s, wait, up to 60 s, then give up with "someone is typing in

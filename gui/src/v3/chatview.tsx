@@ -19,7 +19,7 @@ export function ChatView({ b, sessionKey, findFiles, worktreeOf }: { b: BridgeSt
   const agent = (b.session?.key ?? sessionKey ?? "").startsWith("codex/") ? "Codex" : "Claude";
   const f = useMemo(() => fold(b.events), [b.events]);
   const cost = useMemo(() => b.events.reduce((n, e) => (e.t === "turn.end" && e.costUsd ? n + e.costUsd : n), 0), [b.events]);
-  const running = b.status === "ready" && f.running;
+  const running = b.status === "ready" && b.turnOpen;
   // Copy conversation sits in the session's ⋯ menu (proposal C).
   useCopySource(b.session?.key ?? sessionKey, f.rows.length ? () => copyRows(f.rows, b.earlier ? () => b.allEvents().then((all) => fold(all).rows) : undefined) : null);
   const notice =

@@ -123,6 +123,7 @@ background service stops checking its usage.
 | `mappings` | List folder rules and remote bindings. |
 | `pool …` | Groups of accounts a folder rule can point at. See [below](#pool). |
 | `guard [block\|warn\|off]` | One account, one running session: read or set the policy. See [below](#guard). |
+| `terminal-sync [on\|off\|status] [--json]` | Whether a `claude` or `codex` typed in your terminal runs in Agent Switch, so you can type into the same session there and in the app (default on). See [below](#terminal-starts-run-in-agent-switch). |
 | `shellenv [--shell S]` | Print the shell integration. |
 | `shellenv install [--shell S]` | Add the shell integration to your shell's startup file. |
 
@@ -166,8 +167,10 @@ goes through these steps, in this order:
    sign-in is read again. If it changed since the pick (a sign-in or a rebind
    landed in between), the start is refused with exit code `86` and both
    sign-ins are named.
-7. **The start:** the wrapper sets `CLAUDE_CONFIG_DIR` to the account's folder
-   and runs the real `claude` with your arguments. The wrapper runs the tool
+7. **The start:** with `terminal-sync` on, an interactive start runs in Agent
+   Switch (see [below](#terminal-starts-run-in-agent-switch)). Otherwise the
+   wrapper sets `CLAUDE_CONFIG_DIR` to the account's folder and runs the real
+   `claude` with your arguments. The wrapper runs the tool
    itself after `dir --guard` has exited, and that last step is not checked
    again: from there on the pick is advisory.
 
@@ -180,6 +183,35 @@ Details: [Which account a session uses](/agent-switch/concepts/which-account/).
 `--exclude a,b` leaves those accounts out of this one pick, for a caller that
 just saw one of them fail (a limit, an outage) and wants another.
 
+
+### Terminal starts run in Agent Switch
+
+With `terminal-sync` on (the default) and tmux installed, a `claude` or
+`codex` you type in your own terminal runs in Agent Switch's host, and your
+terminal shows it. It is one session with two windows: what you type in the
+terminal and what you type in the app reach the same program, and both see
+everything. The wrapper asks `dir --guard --launch` as before, then hands the
+start to `launch`, so account, folder rules, `ask` and the guard work as above.
+
+- **Your shell's environment comes along** (PATH, project variables). It passes
+  through a file only you can read, which the session removes before the
+  program starts; it never appears in a process list.
+- **Ending the program** (`/exit`, Ctrl-D) ends the session and your terminal
+  returns to its prompt with the program's exit status.
+- **Closing the terminal window** leaves the session running in Agent Switch.
+  Join it again with `agent-switch host attach <session>`, or end it in the app.
+- **A resume** (`claude --resume <id>`, `--session-id <id>`) keeps its id and
+  runs on the account that holds the session, whatever the folder routes to.
+  `claude -c` resumes the folder's newest session on the routed account.
+- **Typing from both sides at once:** when the app sends something into the
+  session, it waits until nobody has typed in an attached terminal for 3
+  seconds, at most a minute, and never sends Enter after a key someone typed
+  in between.
+- **Not hosted, exactly as before:** `-p`/`--print`, `--output-format`,
+  `--version`, `--help`, subcommands (`claude mcp`, `codex exec`, …), the
+  `--resume` picker, `--fork-session`, a pipe instead of a terminal, Windows,
+  no tmux, and a start inside an Agent Switch window. `agent-switch
+  terminal-sync off` turns it off; so does Settings › Open in.
 ### `exec`
 
 The shell integration only works in a shell. A tool that starts `codex` or
@@ -353,13 +385,13 @@ suggested. The background service must be running.
 | `worktrees [--json]` | The git worktrees of the repositories your sessions work in, and which session is in which. |
 | `changes <session> [--json]` | The files a session changed in its worktree against the last commit, with lines added and removed. Untracked files count as added. At most 500 files are listed, by path; the rest are counted (`more` with `--json`, a closing line without). Claude and Codex. |
 | `timeline <session> [--subagent ID] [--json] [--limit N] [--before N] [--from N]` | A session's history as Agent Switch events: prompts, answers, tool calls with their results, edits as diffs, subagents. Read-only and local. A page holds the newest `--limit` drawn rows (default 200) before index `--before`; `--from N` returns every event from index N on instead. Bookkeeping lines (attachments, API requests, thinking blocks) are left out and only counted, in `hidden`; `from`, `total` and `earlierPrompts` say what lies before the page. Claude from its transcript; a Claude Code version newer than the tested ones is marked. Codex through `codex app-server`. `--subagent` reads one Claude subagent's own transcript instead (its id from `sessions --json`): only its newest 4 MB, and `truncated` in the JSON says when the start was left out. |
-| `bridge <session> [--mode default\|acceptEdits\|plan] [--model M]` · `bridge --new [profile] --cwd DIR` · `bridge --new --agent <id> --cwd DIR` · `bridge acp/<agent>/<session>` | The chat view's connection to one session: JSON commands on stdin (`send` with images and files, `steer`, `approve`, `deny`, `answer`, `interrupt`, `set-model`, `set-mode`, `close`), events on stdout. Files from outside the session's folder are copied into a private staging folder (20 MB each, removed after 7 days). Open approvals also show in `needs`. It holds the session's input lease, so nothing else types into it meanwhile, and refuses a session running in a terminal. Approvals are always asked; there is no bypass mode. Claude and Codex, and any ACP agent from `agents` (`--agent`): the same events, permissions the agent asks for become approvals, and the bridge offers the agent no file or terminal access of its own and never changes its mode. An ACP session started here resumes by its key through the agent's `session/load`. |
+| `bridge <session> [--mode inherit\|default\|acceptEdits\|plan\|auto] [--model M]` · `bridge --new [profile] --cwd DIR` · `bridge --new --agent <id> --cwd DIR` · `bridge acp/<agent>/<session>` | The chat view's connection to one session: JSON commands on stdin (`send` with images and files, `steer`, `approve`, `deny`, `answer`, `interrupt`, `set-model`, `set-mode`, `close`), events on stdout. Files from outside the session's folder are copied into a private staging folder (20 MB each, removed after 7 days). Open approvals also show in `needs`. It holds the session's input lease, so nothing else types into it meanwhile, and refuses a session running in a terminal. Without `--mode` (or with `inherit`) a Claude chat runs in the permission mode the session last ran in, so auto mode in the terminal is auto mode in the chat; a new chat takes the account's `permissions.defaultMode`. A mode that skips approvals (`bypassPermissions`, `dontAsk`) is never taken over: the chat asks before edits instead. Approvals are always asked; there is no bypass mode. Claude and Codex, and any ACP agent from `agents` (`--agent`): the same events, permissions the agent asks for become approvals, and the bridge offers the agent no file or terminal access of its own and never changes its mode. An ACP session started here resumes by its key through the agent's `session/load`. |
 | `agents [--json]` · `agents suggest` · `agents install <id>` · `agents add <id> [--name N] [--binary B] [-- <args>…]` · `agents remove\|on\|off <id>` · `agents local <id> <ollama\|lmstudio\|local>:<model>\|none` | The coding agents Agent Switch drives, each with its class: **deep** (Claude Code, Codex: accounts, limits, switching), **ACP** (any Agent Client Protocol agent: chat view, limits only if reported), **terminal only** (Antigravity). `suggest` lists Gemini CLI, OpenCode, Goose and Qwen Code with their install command; `install` runs that command in the foreground, where you see it (the app opens it in its terminal sheet), and adds the agent — nothing is installed silently. An agent is a binary and an argument list, never a shell string. `local` marks an agent that runs a model on this machine; OpenCode's own config and Codex's `--oss` are read for it too. Binaries are found on your login shell's PATH and in version-manager folders (nvm, volta, mise, asdf, nix). |
 | `remote [--json]` · `remote rc on\|off <account>` · `remote ssh on\|off` · `remote rpc` | Remote access in stages, all off until turned on. `rc`: new hosted Claude sessions of the account start with Claude Remote Control (Anthropic's channel). `ssh`: lets `ssh <host> agent-switch remote rpc` answer — JSON lines, three methods: `needs.list`, `approval.allow_once`, `approval.deny`. Nothing listens on a port, and no remote path changes a permission mode or a setting. See [Remote access](/agent-switch/guides/remote-access/). |
 | `files <session> [--query WORDS] [--json]` | Files of the session's repository whose path contains every word, names first — what `@` offers in the chat. |
 | `diff <session> [--scope uncommitted\|turn\|session\|worktree\|staged] [--json [--since FINGERPRINT]]` | What a session changed, file by file, each change marked as committed, staged, not staged, or recorded by the last turn. `uncommitted` is what is not committed yet against HEAD — the same files `changes` lists; `worktree` compares with the main line's merge base and includes changes made through Bash and new files; `session` starts where the session began, and when that commit cannot be found it says so and shows nothing rather than comparing with the main line. The answer names the base it compared with. A git run that fails or times out is an error, never an empty list. With `--json`, files past 20,000 lines of changes keep their counts and are marked `omitted`; `--since` with the last `fingerprint` answers `unchanged` without reading the diff again, and the fingerprint also covers the other live sessions in the same worktree, so a session that joins or leaves is never hidden. Lists the same files as `changes`, at most 500 by path, and counts the rest (`more`). File names keep spaces, tabs, quotes and non-ASCII characters as written. Also names other live sessions in the same worktree. |
 | `diff <session> stage\|unstage\|discard --file F [--hunk HASH \| --file-hash HASH]` · `diff <session> undo` · `diff <session> commit --message M` | Act on one change (`--hunk`) or on the whole file: refused while a turn runs, while git is busy, or when the change is no longer as shown. A whole file goes through git's own file commands (`git add`, `git restore --staged`, `git restore`), so a deletion stays a deletion, a new file unstaged is untracked again, and binary files, large new files and links can be acted on too (`--json` marks them with `preview`, as they have no lines to show). With the file's `hash` from `--json`, `--file-hash` refuses when the file changed since it was read ("the file changed since you looked — read it again"). A discard can be undone. The commit runs the repository's hooks. |
-| `view <session> chat\|terminal [--json]` | Switch a session hosted in Agent Switch between its terminal and the chat view, between turns only. To chat, the window waits with a notice while the chat writes; when the chat closes, the program comes back in the window and resumes the same conversation. Claude and Codex only. |
+| `view <session> chat\|terminal [--json]` | Switch a session hosted in Agent Switch between its terminal and the chat view, between turns only. To chat, the window waits with a notice while the chat writes; when the chat closes, the program comes back in the window and resumes the same conversation, in the permission mode the chat last ran in. A chat the app lost track of (a reloaded window) is closed by the switch: after its running turn, and an approval it still waits for, which nobody can see, is denied. Claude and Codex only. |
 | `mcp [--json]` · `mcp open <provider/account>` | The MCP servers (name, transport, where they apply) and plugins each Claude and Codex account has configured, read from the tool's own config; `open` reveals that file. Nothing is installed or changed, and no command line, environment or header of a server is shown. |
 | `store status\|import\|rebuild [--json]` | The local event store behind the v3 views: show it, bring in the hook events, or rebuild its views from the stored events. Needs Node 22.13 or later. |
 | `host start [profile] [--cwd DIR] [--model M] [--effort E] [--worktree] [--remote-control] [--title T]\|list\|attach <session> [--new-window]\|adopt <session> [--stop-source] [--force]\|respawn <session> [--model M] [--effort E]\|end <session> [--yes]` <Badge text="macOS & Linux" variant="caution" /> | Run a Claude, Codex or Antigravity session in Agent Switch's own tmux server, so it keeps running when the window closes. Without a profile it starts where a plain `claude` would. `--model`, `--effort` and `--worktree` start it as they do for `run`. `attach` opens it in this terminal; detaching leaves it running. `attach --new-window` opens it in a new window of the terminal set with `open-terminal` instead, in the session's folder (Warp cannot run a command, so Terminal opens instead on macOS); Agent Switch's window and that terminal then share one session, and typing on either side goes to the same agent. `adopt <provider/account/session>` takes over a Claude or Codex session that runs in your own terminal: the same conversation continues here, hosted, on the same account. It refuses while the session still runs in your terminal; for Claude, `--stop-source` ends it there between turns first. Codex sessions name no program of their own, so quit Codex in its terminal first (`/quit`); `--force` skips the check when the running program may be another session; it never starts a session whose own program still runs, and one take-over of a session runs at a time. `end` stops it, after asking. `respawn <session> [--model M] [--effort E]` restarts it in place on another model or thinking level, between turns. `--remote-control` starts a Claude session with Claude Remote Control under the title (also on for every session of an account with `remote rc on`); a respawn keeps it. Needs tmux. `host --help` prints this usage. |
@@ -477,6 +509,7 @@ of your enabled Claude and Codex accounts about every 5 minutes.
 | --- | --- |
 | `doctor` | Self-check for this OS and each tool. Exits `1` on a hard error. |
 | `activity [--limit N] [--json]` | What agent-switch itself did, and why (newest 2000 kept). Anything shaped like a token is printed as `[redacted]`, also in entries an older version wrote. `--json` prints `{schema, entries[], capacity}`. |
+| `debug-log [--json]` · `debug-log status\|on\|off\|clear\|reveal` | The app's debug log: the newest 100 things done in the desktop app and what came of them (actions; every CLI call that failed, and those that succeeded right after something the person did; chat and view switches; errors), so polling never crowds them out, for bug reports. On by default; `off` stops every writer and deletes the file. Never prompts, messages or file contents: quoted text, paths and file names are cut out (a file shows only its kind), `password=…`-style values and anything token-shaped show as `[redacted]`, and a command is named by its verb and subcommand, never by the values it was given. The app adds its entries with `debug-log add <json>`. File: `~/.agent-switch/debug-log.jsonl`. |
 | `check-update` / `check-updates` | Compare your version with the latest GitHub release. |
 | `update [<version>]` / `upgrade` | Update through npm to the latest version, or to exactly `<version>` (a semver such as `2.12.1`; also how you go back to an older one), then restart the background service on the new version. |
 | `tooling` | Readout of related tools (`agent-config`, `rtk`, `claude`, `codex`, `agy`). No network. Whether the `rtk` found is Token Killer comes from agent-config (`agent-config rtk:detect --json`) when it is installed, else from the output of `rtk gain`. |
@@ -518,6 +551,7 @@ Used by the desktop app and by hooks; not for direct use.
 | `app-visibility visible\|hidden` | The desktop app, when its window is shown or hidden; the background PR refresh pauses while it is hidden. |
 | `__hook-event` | Claude Code and Codex hooks installed by `hooks install`, and the `as-hook` relay when the app is not running. |
 | `__chat-hint` | The prompt hook installed by `hooks chat on`. Prints nothing and exits 0 on any error. |
+| `launch <claude\|codex> --config-dir DIR -- <args…>` | The shell wrapper, after `dir --guard --launch` answered `launch:<dir>`: runs an interactive start in Agent Switch with this terminal as its view. Exit `87` means "start it the old way"; otherwise the program's exit status. |
 | `__statusline` | The status line set by `statusline on`. Records `rate_limits` from its stdin for the account in `CLAUDE_CONFIG_DIR`; no network, prints nothing, exits 0. |
 | `notify --kind K --title T --message M` | The desktop app, to log a notification. |
 | `gui-settings` | The desktop app, for its start-at-login and pet-intro settings. |

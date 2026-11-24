@@ -635,3 +635,37 @@ test("awaitingAnswer: an open AskUserQuestion / ExitPlanMode at the end of a tra
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("listSessions dates a session by its last transcript event, not by a later touch of the file", () => {
+  const root = tmp();
+  try {
+    const cfg = path.join(root, "cfg");
+    const now = Date.now();
+    const write = (id: string, lastEventMs: number | null, fileMtimeMs: number) => {
+      const dir = path.join(cfg, "projects", "-p");
+      fs.mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, `${id}.jsonl`);
+      const lines = [{ type: "user", cwd: "/p", timestamp: new Date(lastEventMs ?? 0).toISOString() }];
+      if (lastEventMs !== null) lines.push({ type: "system", cwd: "/p", timestamp: new Date(lastEventMs).toISOString() });
+      // Metadata records after the last turn carry no timestamp.
+      fs.writeFileSync(file, [...lines.slice(lastEventMs === null ? 1 : 0).map((l) => JSON.stringify(l)), JSON.stringify({ type: "ai-title", aiTitle: id })].join("\n") + "\n");
+      fs.utimesSync(file, new Date(fileMtimeMs), new Date(fileMtimeMs));
+    };
+    const week = 8 * 24 * 3600_000;
+    write("touched-old", now - week, now); // an outside process touched it a moment ago
+    write("recent", now - 60_000, now - 60_000);
+    write("no-stamps", null, now - 120_000); // nothing to read → the file time stands
+    write("skewed", now + 3600_000, now - 180_000); // an event "after" the write → the file time stands
+
+    const rows = listSessions(cfg, 10);
+    assert.deepEqual(rows.map((r) => r.sessionId), ["recent", "no-stamps", "skewed", "touched-old"]);
+    assert.equal(rows.find((r) => r.sessionId === "touched-old")!.mtimeMs, now - week);
+    // The file time as the filesystem stores it (some round utimes below a millisecond).
+    assert.equal(rows.find((r) => r.sessionId === "skewed")!.mtimeMs, fs.statSync(path.join(cfg, "projects", "-p", "skewed.jsonl")).mtimeMs);
+
+    // The cap counts true activity: a touched old file never pushes a recent one out.
+    assert.deepEqual(listSessions(cfg, 1).map((r) => r.sessionId), ["recent"]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

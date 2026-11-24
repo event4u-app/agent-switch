@@ -81,6 +81,7 @@ describe("All sessions page (spec §10.2)", () => {
   });
 });
 
+
 describe("All sessions follows the sidebar's order (8.6)", () => {
   it("rows in the sidebar's order first, then the rest newest first", () => {
     const rows = [sess("a", { lastActiveMs: NOW - 1_000 }), sess("b"), sess("done-old", { live: false, lastActiveMs: NOW - 9_000_000 }), sess("done-new", { live: false, lastActiveMs: NOW - 5_000 }), sess("c")];

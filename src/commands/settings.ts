@@ -4,7 +4,7 @@
  */
 
 import { parseQuietHours, formatQuietHours } from "../quiet-hours.js";
-import { die, readOsNotifications, setOsNotifications, readQuietHours, setQuietHours, readKeepSignedIn, setKeepSignedIn, readCodexAutoReset, setCodexAutoReset } from "../profiles.js";
+import { die, readOsNotifications, setOsNotifications, readQuietHours, setQuietHours, readKeepSignedIn, setKeepSignedIn, readTerminalSync, setTerminalSync, readCodexAutoReset, setCodexAutoReset } from "../profiles.js";
 import { readActivity, ACTIVITY_MAX_LINES } from "../activity.js";
 import { readGuiSettings, writeGuiSettings, applyGuiSetting, type GuiSettingUpdate } from "../gui-settings.js";
 import { appendNotification, readNotifications, clearNotifications, NotificationKind } from "../notifications.js";
@@ -74,6 +74,22 @@ export function cmdKeepSignedIn(sub: string | undefined, json = false): void {
   const enabled = readKeepSignedIn();
   if (json) console.log(JSON.stringify({ enabled }));
   else console.log(`Keep accounts signed in ${enabled ? "ON" : "OFF"} (Claude, Codex and Antigravity accounts; needs the background service).`);
+}
+
+/** `agent-switch terminal-sync [on|off|status] [--json]` — whether a `claude` or
+ *  `codex` typed in the user's own terminal runs in Agent Switch's host, so the
+ *  app can type into the same session (road-to-terminal-sessions-in-sync). Default on. */
+export function cmdTerminalSync(sub: string | undefined, json = false): void {
+  if (sub === "on" || sub === "off") {
+    const on = sub === "on";
+    if (readTerminalSync() !== on) {
+      setTerminalSync(on);
+      logActivity("settings", null, `terminal starts run in Agent Switch ${on ? "on" : "off"}`, "user changed it");
+    }
+  } else if (sub && sub !== "status") die("usage: agent-switch terminal-sync [on|off|status] [--json]");
+  const enabled = readTerminalSync();
+  if (json) console.log(JSON.stringify({ enabled }));
+  else console.log(`Terminal starts run in Agent Switch ${enabled ? "ON" : "OFF"}${enabled ? " — a claude or codex typed in your terminal can be typed into from the app too (needs tmux and the shell integration)" : ""}.`);
 }
 
 /** `agent-switch auto-reset [on|off|status] [--json]` — whether the service

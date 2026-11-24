@@ -984,6 +984,29 @@ export function setChatMarkdown(on: boolean): void {
   }
 }
 
+const DONE_AFTER_KEY = "agent-switch-done-after-min";
+/** The minutes a session may stay quiet before it moves to Done today. */
+export const DONE_AFTER_CHOICES = [5, 15, 30, 60] as const;
+export type DoneAfterMin = (typeof DONE_AFTER_CHOICES)[number];
+
+/** Default 15 (owner request 2026-11-24); anything stored that is not a choice reads as the default. */
+export function getDoneAfterMin(): DoneAfterMin {
+  try {
+    const n = Number(localStorage.getItem(DONE_AFTER_KEY));
+    return (DONE_AFTER_CHOICES as readonly number[]).includes(n) ? (n as DoneAfterMin) : 15;
+  } catch {
+    return 15;
+  }
+}
+
+export function setDoneAfterMin(min: DoneAfterMin): void {
+  try {
+    localStorage.setItem(DONE_AFTER_KEY, String(min));
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const APPEARANCE_KEY = "agent-switch-appearance";
 
 /** The stored v3 appearance as JSON, or null; the caller validates and migrates. */

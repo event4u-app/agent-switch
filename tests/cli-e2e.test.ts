@@ -2391,9 +2391,9 @@ test("shell wrapper: `claude` asks the activated CLI, and falls back to agent-sw
     fs.writeFileSync(path.join(home, "active-cli"), `${path.join(bin, "deleted-worktree", "index.js")}\n`);
     call();
     assert.deepEqual(fs.readFileSync(log, "utf8").trim().split("\n"), [
-      "dev-cli dir --provider claude --guard",
+      "dev-cli dir --provider claude --guard --launch",
       "claude hi",
-      "agent-switch dir --provider claude --guard",
+      "agent-switch dir --provider claude --guard --launch",
       "claude hi",
     ]);
   } finally {

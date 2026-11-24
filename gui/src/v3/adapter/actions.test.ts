@@ -33,6 +33,7 @@ function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "l
     setAgentEnabled: vi.fn(async () => {}),
     setRemoteControl: vi.fn(async () => {}),
     setRemoteSsh: vi.fn(async () => {}),
+    setTerminalSync: vi.fn(async () => {}),
     cleanupMerged: vi.fn(async (_keys?: string[]) => ({ removed: [] as string[], skipped: [] as { path: string; reason: string }[] })),
     prCreatePlan: vi.fn(async (_key: string, base?: string): Promise<PrPlanJson> => plan(base && base !== "main" ? { base, head: "bbbbbbb2", title: `first on ${base}` } : {})),
     prCreate: vi.fn(async (_key: string, _c: PrConfirmJson) => "https://github.com/o/r/pull/12"),

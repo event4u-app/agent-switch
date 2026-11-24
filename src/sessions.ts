@@ -106,6 +106,51 @@ export function readSessionHeader(file: string): SessionHeader {
   }
 }
 
+/** The newest event `timestamp` in a transcript's tail, or null when the tail
+ *  names none (a single line longer than the tail, or no stamped records). */
+export function lastEventMs(file: string): number | null {
+  let fd: number;
+  try {
+    fd = fs.openSync(file, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const size = fs.fstatSync(fd).size;
+    const len = Math.min(size, TAIL_CAP);
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, size - len);
+    const lines = buf.toString("utf8").split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (!lines[i].includes('"timestamp"')) continue;
+      try {
+        const at = Date.parse(JSON.parse(lines[i])?.timestamp);
+        if (Number.isFinite(at)) return at;
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+const activeCache = new Map<string, { mtimeMs: number; size: number; activeMs: number }>();
+
+/** When a transcript was last active: its last recorded event, never later than
+ *  the file time. Cached per file until its time or size changes. */
+function activeAt(file: string, st: fs.Stats): number {
+  const hit = activeCache.get(file);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.activeMs;
+  const event = lastEventMs(file);
+  const activeMs = event === null ? st.mtimeMs : Math.min(event, st.mtimeMs);
+  activeCache.set(file, { mtimeMs: st.mtimeMs, size: st.size, activeMs });
+  return activeMs;
+}
+
 /** Tools that always stop for the user's answer. Other tools can't be told
  *  apart from one that is still running. */
 const QUESTION_TOOLS = new Set(["AskUserQuestion", "ExitPlanMode"]);
@@ -234,15 +279,25 @@ export function listSessions(configDir: string, limit: number, readHeader: (file
       found.push({ file, sessionId: entry.slice(0, -".jsonl".length), projectDir: d.name, st });
     }
   }
+  // The file time is only an upper bound on activity: processes outside the
+  // session rewrite old transcripts in bulk. Walk newest-file-first and stop
+  // once no remaining file time can beat the cap's last true activity time.
   found.sort((a, b) => b.st.mtimeMs - a.st.mtimeMs);
-  return found.slice(0, limit).map(({ file, sessionId, projectDir, st }) => {
+  const picked: { file: string; sessionId: string; projectDir: string; st: fs.Stats; activeMs: number }[] = [];
+  for (const f of found) {
+    if (picked.length >= limit && f.st.mtimeMs <= picked[picked.length - 1].activeMs) break;
+    picked.push({ ...f, activeMs: activeAt(f.file, f.st) });
+    picked.sort((a, b) => b.activeMs - a.activeMs);
+    if (picked.length > limit) picked.pop();
+  }
+  return picked.map(({ file, sessionId, projectDir, st, activeMs }) => {
     const header = readHeader(file);
     return {
       sessionId,
       projectDir,
       cwd: header.cwd,
       summary: header.summary,
-      mtimeMs: st.mtimeMs,
+      mtimeMs: activeMs,
       birthtimeMs: st.birthtimeMs || st.mtimeMs,
       live: false,
       file,

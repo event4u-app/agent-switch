@@ -62,7 +62,7 @@ export interface V3Data {
   palette: PaletteEntry[];
   appearance: Appearance;
   prefersDark: boolean;
-  openIn: { targets: OpenTarget[]; defaultTarget: string | null; lastUsed: string | null; perRepo: Record<string, string>; focusTerminal: boolean; agentApps: { id: string; label: string; tool: string }[]; terminal?: string | null; terminals?: { id: string; name: string; installed: boolean }[] };
+  openIn: { targets: OpenTarget[]; defaultTarget: string | null; lastUsed: string | null; perRepo: Record<string, string>; focusTerminal: boolean; /** `terminal-sync`; null before the first read. */ terminalSync?: boolean | null; agentApps: { id: string; label: string; tool: string }[]; terminal?: string | null; terminals?: { id: string; name: string; installed: boolean }[] };
   /** Settings › Agents (v3.2). */
   agents: { rows: AgentRowView[]; suggestions: AgentSuggestionView[] };
   /** Settings › Remote (v3.2): R1 accounts and the SSH stage. */
@@ -146,6 +146,7 @@ export type V3Action =
   | { type: "agent-install"; id: string }
   | { type: "remote-rc"; account: string; value: boolean }
   | { type: "remote-ssh"; value: boolean }
+  | { type: "terminal-sync"; value: boolean }
   | { type: "restart-engine" };
 
 export const SESSION_MENU = ["Rename…", "Pin", "Move to another account…", "Take over here…", "Hand off…", "Compact", "Detach", "End…"] as const;
@@ -569,7 +570,7 @@ export function V3Window({
         {section === "Appearance" ? (
           <AppearanceSettings a={data.appearance} prefersDark={data.prefersDark} onChange={(value) => act({ type: "appearance", value })} />
         ) : section === "Open in" ? (
-          <OpenInSettings {...data.openIn} on={{ setDefault: (target, repo) => act({ type: "open-default", target, repo }), setTerminal: (id) => act({ type: "open-terminal", id }), focusTerminal: (value) => act({ type: "focus-terminal-setting", value }) }} />
+          <OpenInSettings {...data.openIn} on={{ setDefault: (target, repo) => act({ type: "open-default", target, repo }), setTerminal: (id) => act({ type: "open-terminal", id }), focusTerminal: (value) => act({ type: "focus-terminal-setting", value }), terminalSync: (value) => act({ type: "terminal-sync", value }) }} />
         ) : section === "Agents" ? (
           <AgentsSettings agents={data.agents.rows} suggestions={data.agents.suggestions} on={{ toggle: (id, value) => act({ type: "agent-enabled", id, value }), install: (id) => act({ type: "agent-install", id }) }} />
         ) : section === "Remote" ? (
@@ -899,6 +900,8 @@ export function V3Window({
         onClose={close}
         onOpen={(entry, newTab) => {
           close();
+          // From the palette, All sessions opens on every status.
+          if (entry.id === "page:sessions-table") setTableTab((t) => ({ status: "all", n: t.n + 1 }));
           if (entry.id.startsWith("page:")) openPage(entry.id.slice(5) as Page);
           else if (entry.group === "sessions") openSession(entry.id);
           else if (entry.group === "branches" && entry.id.startsWith("pr:")) openSession(entry.id.slice(3));

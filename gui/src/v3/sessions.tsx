@@ -66,6 +66,8 @@ export interface RowSession {
   needsYou: boolean;
   /** Finished today (the "Done today" row), not in the live list. */
   doneToday?: boolean;
+  /** Quiet for over a day: listed folded under "Older than a day", not in the live list. */
+  older?: boolean;
   /** Who reported `state` (the dot's tooltip). */
   stateSource?: StateSource | null;
   /** D3: "no update in 34m" — working by the host's word, nothing changed since. */
@@ -145,7 +147,7 @@ const statusRank = (x: RowSession) => (x.needsYou || x.state === "needs-you" ? 0
 
 /** One order everywhere (window, tray): needs you · CI failing · working · rest; done sessions are not listed. Pure. */
 export function liveOrder(sessions: readonly RowSession[]): RowSession[] {
-  return sessions.filter((s) => s.state !== "done").sort((a, b) => statusRank(a) - statusRank(b));
+  return sessions.filter((s) => s.state !== "done" && !s.doneToday && !s.older).sort((a, b) => statusRank(a) - statusRank(b));
 }
 
 /** The first descendant that needs the user, depth first (D6). Pure. */
@@ -761,7 +763,8 @@ export function SessionsZone({
   const done = sessions.filter((s) => s.doneToday).length;
   // Status grouping: ended sessions stay one click away in two rows pinned under the list,
   // Done today and Older; each opens the All sessions window (owner, 2026-11-24).
-  const ended = sessions.filter((s) => s.doneToday);
+  // The data marks a long-quiet session `older` instead of `doneToday`; midnight still decides the row.
+  const ended = sessions.filter((s) => s.doneToday || s.older);
   const midnight = nowMs == null ? null : new Date(nowMs).setHours(0, 0, 0, 0);
   const endedAt = (s: RowSession) => s.lastActiveMs ?? lastActiveOf(s.key);
   const doneRows = [

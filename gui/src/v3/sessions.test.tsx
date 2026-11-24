@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { SessionRow, SessionsZone, childNoun, childrenFromCli, liveOrder, sortLive, type RowSession } from "./sessions.js";
 
 afterEach(cleanup);

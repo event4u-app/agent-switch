@@ -1,7 +1,7 @@
 /**
  * `agent-switch host start|list|end` — sessions that keep running when the
- * window closes (src/host/tmux-host.ts). Hosting is opt-in per start: a plain
- * `claude` keeps starting in the user's own terminal as before.
+ * window closes (src/host/tmux-host.ts). A `claude` or `codex` typed in the user's
+ * own terminal is hosted too while `terminal-sync` is on (src/commands/launch.ts).
  */
 
 import { sessionAgentConfigEnv } from "../agent-config-root.js";

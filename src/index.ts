@@ -79,13 +79,16 @@ import {
   cmdActivity,
   cmdGuiSettings,
   cmdKeepSignedIn,
+  cmdTerminalSync,
   cmdAutoReset,
   cmdNotifications,
   cmdNotify,
   cmdOsNotify,
   cmdQuietHours,
 } from "./commands/settings.js";
+import { cmdDebugLog } from "./commands/debug-log.js";
 import { cmdConfig, cmdShare } from "./commands/sharing.js";
+import { cmdLaunch } from "./commands/launch.js";
 import {
   cmdCheckUpdate,
   cmdGui,
@@ -118,6 +121,7 @@ async function main(): Promise<void> {
   if (cmd === "__hook-event") return cmdHookEvent(); // internal, silent, no migration
   if (cmd === "__chat-hint") return cmdChatHint(); // internal: Claude's prompt hook, never blocks
   if (cmd === "__statusline") return cmdStatusline(); // internal: Claude's statusLine, prints nothing
+  if (cmd === "launch") return cmdLaunch(rest); // the shell wrapper's call; claude's own flags follow --, never parsed here
   if (cmd === "__program-status") return runProgramStatus(positional[0] ?? die("usage: agent-switch __program-status <state file>")); // internal: a hosted window's pipe-pane reader
 
   // A bare `agent-switch` (no command) launches the GUI, which reads profiles —
@@ -170,6 +174,7 @@ async function main(): Promise<void> {
     case "os-notify": return cmdOsNotify(positional[0], !!flags.json);
     case "quiet-hours": return cmdQuietHours(positional[0], !!flags.json);
     case "keep-signed-in": return cmdKeepSignedIn(positional[0], !!flags.json);
+    case "terminal-sync": return cmdTerminalSync(positional[0], !!flags.json);
     case "auto-reset": return cmdAutoReset(positional[0], !!flags.json);
     case "uninstall": return cmdUninstall(flags);
     case "run": {
@@ -186,7 +191,7 @@ async function main(): Promise<void> {
     case "status": return cmdStatus(providerExplicit ? providerId : undefined, positional[0], !!flags.json);
     case "current": return cmdCurrent(providerExplicit ? providerId : undefined);
     case "whoami": return cmdWhoami(providerId, positional[0]);
-    case "dir": return cmdDir(providerId, !!flags.guard, !!flags.json, !!flags.plain, typeof flags.exclude === "string" ? flags.exclude.split(",").map((x) => x.trim()).filter(Boolean) : []);
+    case "dir": return cmdDir(providerId, !!flags.guard, !!flags.json, !!flags.plain, typeof flags.exclude === "string" ? flags.exclude.split(",").map((x) => x.trim()).filter(Boolean) : [], !!flags.launch);
     case "continue": return cmdContinue(positional[0], typeof flags.text === "string" ? flags.text : undefined);
     case "strategy": return cmdStrategy(providerId, positional[0], !!flags.json);
     case "exec": {
@@ -265,6 +270,7 @@ async function main(): Promise<void> {
     case "protection": return cmdProtection(positional[0], positional.slice(1), flags);
     case "pool": case "pools": return cmdPool(positional[0], positional.slice(1), flags);
     case "gui-settings": return cmdGuiSettings(positional[0], positional.slice(1), flags);
+    case "debug-log": return cmdDebugLog(positional[0], positional.slice(1), flags);
     case "help": case "--help": case "-h": return usage();
     // A bare `agent-switch` (no command) launches the GUI; an unknown command
     // still prints usage and exits non-zero.

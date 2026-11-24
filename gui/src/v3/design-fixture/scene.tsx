@@ -22,6 +22,7 @@ import { ToolsPage, allNeeds } from "../tools.js";
 import { ExternalBody, HostedTerminal } from "../workbench.js";
 import type { LimitAccount } from "../limits.js";
 import type { RowSession } from "../sessions.js";
+import type { TableSession } from "../pages.js";
 import type { ChangedFile, SummaryFacts } from "../panels.js";
 import { Review } from "../review.js";
 import type { ReviewFileJson } from "../../ipc.js";

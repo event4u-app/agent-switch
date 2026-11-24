@@ -20,6 +20,9 @@ describe("bridge spawn scope", () => {
     { key: "codex/Matze1/01a19e25-3b5a-71d0-a44b-f4aca10cc111", mode: "plan", model: "gpt-5.5" },
     { new: { profile: "work", provider: "claude", cwd: "/Users/you/code/my app" }, mode: "acceptEdits" },
     { new: { profile: "MatneX", provider: "codex", cwd: "C:\\code\\x" }, mode: "default", model: "o4" },
+    { key: "claude/work/9f640d3b-0a51-47b5-944c-934d3148a098", mode: "inherit" },
+    { key: "claude/work/9f640d3b-0a51-47b5-944c-934d3148a098", mode: "auto", model: "opus" },
+    { new: { profile: "work", provider: "claude", cwd: "/x" }, mode: "inherit" },
   ])("allows %j", (spec) => {
     const { scope, args } = bridgeArgs(spec);
     expect(allowed(scope, args)).toBe(true);
@@ -27,6 +30,7 @@ describe("bridge spawn scope", () => {
 
   it("refuses a bypass mode, another command, a key that is not a session, a folder with a newline", () => {
     expect(allowed("as-bridge", ["bridge", "claude/work/abcd1234", "--mode", "bypassPermissions"])).toBe(false);
+    expect(allowed("as-bridge", ["bridge", "claude/work/abcd1234", "--mode", "dontAsk"])).toBe(false);
     expect(allowed("as-bridge", ["host", "claude/work/abcd1234", "--mode", "default"])).toBe(false);
     expect(allowed("as-bridge", ["bridge", "../../etc/passwd", "--mode", "default"])).toBe(false);
     expect(allowed("as-bridge-new", ["bridge", "--new", "work", "--provider", "claude", "--cwd", "/x\n--mode", "--mode", "default"])).toBe(false);

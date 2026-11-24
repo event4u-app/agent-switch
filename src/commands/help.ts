@@ -21,7 +21,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch run [--provider P] [name] [--cwd DIR] [--model M] [--effort E] [--worktree] [--tmux] [--new-window] [..]  launch the provider's CLI (no name = the account a plain start picks for the folder; --worktree = in a new worktree; --tmux = managed tmux session, POSIX; --new-window = in a new window of the terminal set with open-terminal)
   agent-switch host start [profile] [--provider P] [--cwd DIR] [--model M] [--effort E] [--worktree] [--remote-control] [--title T] | list [--json] | attach <session> [--new-window] | adopt <session> [--stop-source] [--force] | respawn <session> [--model M] [--effort E] | end <session> [--yes]   sessions hosted by Agent Switch that keep running when the window closes (needs tmux; host --help for details)
   agent-switch view <session> chat|terminal [--json]   switch a hosted session between its terminal and the chat view, between turns
-  agent-switch bridge <session> [--mode default|acceptEdits|plan] [--model M] | bridge --new [profile] --cwd DIR   the chat view's JSON connection to one session (stdin commands, stdout events)
+  agent-switch bridge <session> [--mode inherit|default|acceptEdits|plan|auto] [--model M] | bridge --new [profile] --cwd DIR   the chat view's JSON connection to one session (stdin commands, stdout events)
   agent-switch needs [--json] | needs later <id> | needs seen | needs allow|deny <session> <approval>   everything waiting for you, most urgent first
   agent-switch timeline <session> [--subagent ID] [--json] [--limit N] [--before N] [--from N]   a session's history as events (prompts, answers, tool calls, edits); a page is N drawn rows, bookkeeping lines only counted
   agent-switch changes <session> [--json]       the files a session changed in its worktree against the last commit
@@ -86,6 +86,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch pool [list|create|rename|delete|add|remove|suggest] [--json]    optional groups a folder rule can point at
   agent-switch auth-status [--provider P] [--json]   per-profile login state from the provider's store (no tokens)
   agent-switch activity [--limit N] [--json]   what agent-switch itself did, and why
+  agent-switch debug-log [--json] | status | on|off|clear | reveal   the app's last 100 actions and errors, for bug reports (no prompts or file contents)
   agent-switch picks [--limit N] [--json]      which account each wrapped start chose, and why
   agent-switch limits [--provider P] [--json]  every account's limits from cache: usable or why not, and how fresh
   agent-switch switch list|show|request|decide … [--json]   switch requests near a limit: raise one, or record your decision (first decision counts)
@@ -112,6 +113,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch os-notify [on|off|status] [--json]   daemon-side OS desktop notifications, Linux/Windows (default off; macOS: the app shows them)
   agent-switch quiet-hours [off|HH:MM-HH:MM|status] [--json]   no desktop notification in this daily window (still listed)
   agent-switch keep-signed-in [on|off|status] [--json]   let the service keep unused logins from lapsing (default on)
+  agent-switch terminal-sync [on|off|status] [--json]   a claude or codex typed in your terminal runs in Agent Switch, so the app types into the same session (default on)
   agent-switch auto-reset [on|off|status] [--json]   at 100 % the service redeems one banked Codex reset by itself, once per cycle (default off)
   agent-switch uninstall [--force]             remove all agent-switch data + daemon
   agent-switch usage history [--provider P] [--profile <name>] [--json]   daemon-recorded usage samples per profile

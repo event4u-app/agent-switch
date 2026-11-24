@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import fx from "./fixtures/timeline-claude-2.1.316.json";
 import { ChatView } from "./chatview.js";
 import type { Chat } from "./adapter/chats.js";
-import type { AsEvent } from "./timeline.js";
+import { fold, type AsEvent } from "./timeline.js";
 
 afterEach(cleanup);
 
@@ -30,6 +30,8 @@ function chat(over: Partial<Chat> = {}): Chat {
     setMode: vi.fn(),
     close: vi.fn(),
     ...over,
+    // As a live bridge that sent all of these events would report it.
+    turnOpen: over.turnOpen ?? fold(over.events ?? (fx.stream as AsEvent[])).running,
   };
 }
 
