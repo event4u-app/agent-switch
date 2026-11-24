@@ -943,7 +943,7 @@ export function V3Window({
       </Anchored>
     ) : limitsAccount ? (
       // Anchored beside the Limits strip; it never switches anything by itself (spec §7.5).
-      <Anchored onClose={close} className="absolute bottom-[40px] left-[352px] z-10">
+      <Anchored onClose={close} className="absolute bottom-[7px] left-[348px] z-10">
         <LimitsPopover
           a={limitsAccount}
           nowMs={data.nowMs}
@@ -1041,7 +1041,7 @@ export function V3Window({
       overlay={
         overlayNode ??
         (peek && peekFacts(peek.key) && (
-          <div className="pointer-events-none absolute left-[352px] z-10" style={{ top: peek.y }}>
+          <div className="pointer-events-none absolute left-[348px] z-10" style={{ top: peek.y }}>
             <PeekCard f={peekFacts(peek.key)!} nowMs={data.nowMs} />
           </div>
         ))
