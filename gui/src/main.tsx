@@ -7,6 +7,10 @@ import { applyAppearance, loadAppearance } from "./v3/adapter/appearance.js";
 import "./index.css";
 import { applyTheme, getTheme } from "./theme.js";
 import { applyAutostartDefault } from "./ipc.js";
+import { installDebugLog } from "./debug-log.js";
+
+// The debug log: the last 100 actions and errors of this window, for bug reports (Settings › General).
+installDebugLog();
 
 // Apply the saved theme before first paint so there is no flash.
 applyTheme(getTheme());

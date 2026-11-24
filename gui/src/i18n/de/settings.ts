@@ -59,6 +59,10 @@ export const settings: { readonly [K in keyof typeof en]: string } = {
   "settings.general.devModeDetail":
     "Fügt Testhelfer hinzu: 25 Testbenachrichtigungen in der Glocke erzeugen, einen Vorschlag kurz vor dem Limit erzwingen, Pet-Sprechblasen und Posen testen. Nur in Dev-Builds.",
   "settings.general.devModeReason": "Dies ist ein Release-Build.",
+  "settings.general.debugLog": "Debug-Protokoll",
+  "settings.general.debugLogDetail":
+    "Speichert die letzten 100 Aktionen in der App und was daraus wurde – fehlgeschlagene Aufrufe, Chat- und Ansichtswechsel, Fehler –, damit sich ein Fehler nachvollziehen lässt. Nie Prompts, Nachrichten oder Dateiinhalte. Gespeichert in ~/.agent-switch/debug-log.jsonl.",
+  "settings.general.debugLogShow": "Datei zeigen",
   "settings.general.support": "Agent Switch unterstützen",
   "settings.general.supportDetail": "Kostenlos & Open Source – Sterne, Votes und Shares helfen anderen Entwicklern, es zu finden.",
   "settings.general.starOnGitHub": "Auf GitHub mit Stern markieren",

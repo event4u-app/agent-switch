@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import * as ipc from "../../ipc.js";
 import type { AsEvent } from "../timeline.js";
+import { errorLine, recordDebug } from "../../debug-log.js";
 
 export type BridgeStatus = "starting" | "ready" | "closed" | "error";
 
@@ -108,11 +109,19 @@ export function useBridge(spec: ipc.BridgeSpec | null, deps: BridgeDeps = realDe
       const h = "key" in spec ? await deps.history(spec.key).catch(() => none) : none;
       if (!alive) return;
       set((p) => ({ ...p, events: [...h.events, ...p.events], earlier: h.from > 0 ? { from: h.from, prompts: h.earlierPrompts } : null, stale: new Set([...p.stale, ...cardIds(h.events)]) }));
-      const child = await deps.open(spec, onLine, () => alive && set((p) => ({ ...p, status: p.status === "error" ? "error" : "closed" })));
+      const child = await deps.open(spec, onLine, (code, stderr) => {
+        // A bridge that failed (exit code) is in the debug log with why; a closed chat ends with 0.
+        if (code !== 0) recordDebug({ kind: "bridge", what: "chat process ended", key: "key" in spec ? spec.key : undefined, ok: false, error: errorLine(stderr), detail: { code: code ?? "signal" } });
+        if (alive) set((p) => ({ ...p, status: p.status === "error" ? "error" : "closed" }));
+      });
       // Closed while it was starting: nobody would ever close this bridge, and it would hold the session.
       if (!alive) return void child.send({ cmd: "close" }).catch(() => {});
       proc.current = child;
-    })().catch((e: unknown) => alive && set((p) => ({ ...p, status: "error", error: e instanceof Error ? e.message : String(e) })));
+    })().catch((e: unknown) => {
+      const message = e instanceof Error ? e.message : String(e);
+      recordDebug({ kind: "bridge", what: "chat did not start", key: "key" in spec ? spec.key : undefined, ok: false, error: message });
+      if (alive) set((p) => ({ ...p, status: "error", error: message }));
+    });
     return () => {
       alive = false;
       void proc.current?.send({ cmd: "close" }).catch(() => {});
@@ -122,7 +131,16 @@ export function useBridge(spec: ipc.BridgeSpec | null, deps: BridgeDeps = realDe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [specKey, deps]);
 
-  const send = useCallback((c: object) => void proc.current?.send(c).catch((e: unknown) => set((p) => failed(p, e instanceof Error ? e.message : String(e)))), []);
+  const send = useCallback(
+    (c: object) =>
+      void proc.current?.send(c).catch((e: unknown) => {
+        const message = e instanceof Error ? e.message : String(e);
+        // What was sent stays out: only the command's name and why it did not reach the chat.
+        recordDebug({ kind: "bridge", what: `${String((c as { cmd?: unknown }).cmd ?? "command")} did not reach the chat`, ok: false, error: message });
+        set((p) => failed(p, message));
+      }),
+    [],
+  );
   return {
     ...s,
     send: (text, attachments) => send({ cmd: "send", text, ...(attachments?.length ? { attachments } : {}) }),

@@ -38,6 +38,7 @@ import { useChats } from "./chats.js";
 import { ReviewHost } from "./ReviewHost.js";
 import { McpHost } from "./McpHost.js";
 import { afterChatClosed, loadOwnViews, OWN_VIEWS_STORAGE, rememberOwnView, ResumeGate, resumesChat, viewStep, type OwnView } from "./viewSwitch.js";
+import { keyOf, recordDebug } from "../../debug-log.js";
 import { fold } from "../timeline.js";
 import { sessionFromRow } from "../../vm/build.js";
 import { ChatView } from "../chatview.js";
@@ -338,7 +339,11 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     },
     takeOver: (key) => setTakeover({ key, busy: false, error: null }),
   };
-  const act = (a: V3Action) => void dispatchV3(a, deps);
+  const act = (a: V3Action) => {
+    // What the person did: the action and the session it is about, never what it carries (text, files).
+    recordDebug({ kind: "action", what: a.type, key: keyOf(Object.values(a)) });
+    void dispatchV3(a, deps);
+  };
 
   // The [Terminal | Chat] switch (Phase 4): only between turns, so a switch
   // asked for during a turn is armed and happens when the turn ends.
@@ -369,6 +374,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     // transcript: switching only changes the drawing, nothing is started.
     if (!tab && !hostedKeys.has(key)) return setOwnView(key, to);
     const step = viewStep(to, { inChat: !!tab, hosted: hostedKeys.has(key), parked: parkedKeys.has(key), chatRunning: chatRunning(key), terminalRunning: terminalRunning(key) });
+    recordDebug({ kind: "view", what: `switch to ${to}: ${step.do}`, key, detail: { inChat: !!tab, hosted: hostedKeys.has(key), parked: parkedKeys.has(key) } });
     const restore = () =>
       void ipc
         .viewSwitch(key, "terminal")

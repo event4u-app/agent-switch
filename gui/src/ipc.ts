@@ -32,6 +32,7 @@ import {
 } from "./v3/adapter/feeds.js";
 type ChangedFileRow = ReturnType<typeof parseChanges>[number];
 import { parseAgentConfigVersion } from "./agent-config.js";
+import { describeCall, errorLine, recentAction, recordDebug } from "./debug-log.js";
 import { parseClaudeSettings, type ClaudeSettingsStatus } from "./claude-settings.js";
 import type { BubbleAction } from "./pet/model.js";
 import { getPetPresence, getPetWelcomed, setPetWelcomedFlag } from "./settings-store.js";
@@ -95,7 +96,48 @@ function inTrayWindow(): boolean {
  *  the tray a call outside its read-only list keeps the plain name, which the
  *  tray capability does not allow — it fails closed. */
 function cli(args: string[]) {
-  return Command.create((inTrayWindow() && trayScope(args)) || "agent-switch", args);
+  const cmd = Command.create((inTrayWindow() && trayScope(args)) || "agent-switch", args);
+  // Debug log: every failure, and every success that changed something (a read that polls is left out).
+  // A proxy, so the command itself is never changed; its other methods run on it as before.
+  const execute = async () => {
+    const t0 = Date.now();
+    const { what, key, read } = describeCall(args);
+    try {
+      const out = await cmd.execute();
+      const refused = jsonRefusal(out.stdout);
+      const failed = out.code !== 0 || refused !== null;
+      // A failure always; a success only as the outcome of something the person just did (the rest is polling).
+      if (failed || (!read && recentAction())) recordDebug({ kind: "call", what, key, ok: !failed, ms: Date.now() - t0, ...(failed ? { error: refused || errorLine(out.stderr) || lastLine(out.stdout), detail: { code: out.code ?? -1 } } : {}) });
+      return out;
+    } catch (e) {
+      recordDebug({ kind: "call", what, key, ok: false, ms: Date.now() - t0, error: e instanceof Error ? e.message : String(e) });
+      throw e;
+    }
+  };
+  return new Proxy(cmd, {
+    get(target, prop) {
+      if (prop === "execute") return execute;
+      const v: unknown = Reflect.get(target, prop, target);
+      return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+    },
+  });
+}
+
+/** A `--json` answer that says it did not work (`{"ok": false, "error": ...}`): its message, else null. */
+function jsonRefusal(stdout: string | undefined): string | null {
+  const line = lastLine(stdout);
+  if (!line.startsWith("{") || !line.includes('"ok":false')) return null;
+  try {
+    const o = JSON.parse(line) as { ok?: boolean; error?: string };
+    return o.ok === false ? String(o.error ?? "refused") : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The last non-empty line of a command's output: where its error message is. */
+function lastLine(s: string | undefined): string {
+  return (s ?? "").trim().split("\n").pop() ?? "";
 }
 
 /** The attention queue (`agent-switch needs --json`), with the resolved items
@@ -313,8 +355,9 @@ export interface BridgeProcess {
   kill(): Promise<void>;
 }
 
-/** Start `agent-switch bridge`: every stdout line is handed to `onLine`. */
-export async function openBridge(spec: BridgeSpec, onLine: (line: string) => void, onClose: (code: number | null) => void): Promise<BridgeProcess> {
+/** Start `agent-switch bridge`: every stdout line is handed to `onLine`. `onClose` gets the exit code and
+ *  the last of stderr, where a bridge that ended before it could say anything on stdout says why. */
+export async function openBridge(spec: BridgeSpec, onLine: (line: string) => void, onClose: (code: number | null, stderr?: string) => void): Promise<BridgeProcess> {
   const { scope, args } = bridgeArgs(spec);
   const cmd = Command.create(scope, args);
   let buf = "";
@@ -327,7 +370,9 @@ export async function openBridge(spec: BridgeSpec, onLine: (line: string) => voi
       if (line) onLine(line);
     }
   });
-  cmd.on("close", (e: { code: number | null }) => onClose(e.code));
+  let err = "";
+  cmd.stderr.on("data", (d: string) => void (err = (err + d).slice(-1000)));
+  cmd.on("close", (e: { code: number | null }) => onClose(e.code, err));
   const child = await cmd.spawn();
   return {
     send: (command) => child.write(JSON.stringify(command) + "\n"),
@@ -424,6 +469,16 @@ export interface McpAccountJson {
 export async function mcpList(): Promise<McpAccountJson[]> {
   const o = JSON.parse(await runCli(["mcp", "--json"]));
   return Array.isArray(o) ? o : [];
+}
+
+/** `debug-log on|off`: whether the debug log is written (the CLI's marker; its own processes check it too). */
+export async function setDebugLogFile(on: boolean): Promise<void> {
+  await runCli(["debug-log", on ? "on" : "off", "--json"]);
+}
+
+/** `debug-log reveal`: show the debug log file in the file manager. */
+export async function revealDebugLog(): Promise<void> {
+  await runCli(["debug-log", "reveal", "--json"]);
 }
 
 /** `mcp open <provider/account>`: reveal the account's config file. */

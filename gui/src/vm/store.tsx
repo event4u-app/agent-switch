@@ -9,6 +9,7 @@ import { t } from "../i18n/index.js";
 import type { Actions } from "./actions.js";
 import type { Session, ViewModel } from "./types.js";
 import type { StartChoice } from "../ipc.js";
+import { recordDebug } from "../debug-log.js";
 
 export type Screen = "home" | "sessions" | "accounts" | "tools" | "activity" | "health" | "settings";
 export type SettingsTab =
@@ -158,6 +159,8 @@ export function ASProvider({
   const dismissToast = useCallback((id: number) => setToasts((ts) => ts.filter((t) => t.id !== id)), []);
   const toast = useCallback(
     (t: Omit<Toast, "id">) => {
+      // What went wrong as the person saw it.
+      if (t.tone === "alert" || t.tone === "warn") recordDebug({ kind: "error", what: `toast ${t.tone}`, ok: false, error: t.text });
       const id = ++toastSeq.current;
       setToasts((ts) => [...ts.slice(-(MAX_TOASTS - 1)), { ...t, id }]);
       window.setTimeout(() => dismissToast(id), TOAST_MS);
