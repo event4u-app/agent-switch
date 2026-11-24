@@ -127,7 +127,7 @@ test("libraryRound: open PR → auto-kept and vaulted; merged > 24 h → archive
   const cfg = path.join(home, "claude", "work", "config");
   fs.mkdirSync(path.join(cfg, "projects", "-repo"), { recursive: true });
   fs.writeFileSync(path.join(cfg, ".claude.json"), "{}");
-  fs.writeFileSync(path.join(cfg, "projects", "-repo", "8888-round.jsonl"), JSON.stringify({ cwd: repo }) + "\n");
+  fs.writeFileSync(path.join(cfg, "projects", "-repo", "8888-round.jsonl"), JSON.stringify({ type: "user", cwd: repo }) + "\n");
   const pr = (lifecycle: string, updatedAt: string) => ({ "o/r": { fetchedAt: new Date().toISOString(), rateRemaining: null, rateLimit: null, prs: [{ repo: "o/r", number: 7, url: "", headRepo: "o/r", headSha: sha, lifecycle, mergeable: "MERGEABLE", review: "NONE", ci: "SUCCESS", failingChecks: [], updatedAt }] } });
   const round = () => {
     const mod = new URL("../src/commands/library.js", import.meta.url).href;

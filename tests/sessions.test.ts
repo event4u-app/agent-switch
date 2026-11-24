@@ -46,7 +46,8 @@ function seedSession(configDir: string, encDir: string, id: string, opts: { cwd?
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${id}.jsonl`);
   const header = JSON.stringify({ cwd: opts.cwd, summary: opts.summary, type: "whatever" });
-  fs.writeFileSync(file, `${header}\n{"opaque":"blob line 2"}\n`);
+  // A said word makes it a session the list shows; an empty one is left out.
+  fs.writeFileSync(file, `${header}\n{"type":"user","opaque":"blob line 2"}\n`);
   if (opts.mtimeMs !== undefined) fs.utimesSync(file, new Date(opts.mtimeMs), new Date(opts.mtimeMs));
   return file;
 }
@@ -157,6 +158,40 @@ test("listSessions orders by mtime (newest first) and respects the limit", () =>
 
     assert.equal(listSessions(cfg, 2).length, 2);
     assert.deepEqual(listSessions(path.join(root, "nope"), 5), []); // no projects dir → empty
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("listSessions lists only sessions you can open (owner, 2026-11-24): nothing from a temp folder, nothing empty", () => {
+  const root = tmp();
+  try {
+    const cfg = path.join(root, "cfg");
+    const t = Date.now();
+    const seedRun = (encDir: string, id: string, body: string, mtimeMs: number) => {
+      const dir = path.join(cfg, "projects", encDir);
+      fs.mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, `${id}.jsonl`);
+      fs.writeFileSync(file, body);
+      fs.utimesSync(file, new Date(mtimeMs), new Date(mtimeMs));
+    };
+    const said = (entrypoint: string) => `${JSON.stringify({ type: "user", cwd: "/x", entrypoint, message: { role: "user", content: "hi" } })}\n`;
+    // AI-council calls put their huge request lines first: no cwd or entrypoint in the head.
+    seedRun(encodeProjectDir("/private/var/folders/_s/abc123/T"), "council", `${JSON.stringify({ type: "api-request-blob", data: "x".repeat(70 * 1024) })}\n${said("sdk-cli")}`, t);
+    seedRun(encodeProjectDir("/private/var/folders/_s/abc123/T/dl-unopim-1"), "nested", said("sdk-cli"), t - 1_000);
+    seedRun(encodeProjectDir("/private/tmp/claude-501/scratchpad/s1-cwd"), "cwd", said("cli"), t - 2_000);
+    seedRun(encodeProjectDir("/private/tmp/claude-501/x/scratchpad-readers"), "readers", said("sdk-cli"), t - 3_000);
+    seedRun(encodeProjectDir(os.tmpdir()), "ostmp", said("cli"), t - 4_000);
+    // Opened and closed before a word was said: nothing to open.
+    seedRun("-Users-me-code-app", "empty", `${JSON.stringify({ type: "summary", cwd: "/Users/me/code/app" })}\n`, t - 5_000);
+    // The chat bridge runs `claude -p` too: in a real project it is a hosted chat and stays.
+    seedRun("-Users-me-code-app", "hosted", said("sdk-cli"), t - 6_000);
+    seedRun("-Users-me-code-app", "terminal", said("cli"), t - 7_000);
+    seedRun("-Users-me-code-other", "next", said("cli"), t - 8_000);
+
+    assert.deepEqual(listSessions(cfg, 10).map((r) => r.sessionId), ["hosted", "terminal", "next"]);
+    // Hidden sessions never take a slot from the cap.
+    assert.deepEqual(listSessions(cfg, 2).map((r) => r.sessionId), ["hosted", "terminal"]);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -645,10 +680,11 @@ test("listSessions dates a session by its last transcript event, not by a later 
       const dir = path.join(cfg, "projects", "-p");
       fs.mkdirSync(dir, { recursive: true });
       const file = path.join(dir, `${id}.jsonl`);
-      const lines = [{ type: "user", cwd: "/p", timestamp: new Date(lastEventMs ?? 0).toISOString() }];
+      // A said turn either way; with no event time it carries no timestamp at all.
+      const lines: Record<string, string>[] = [lastEventMs === null ? { type: "user", cwd: "/p" } : { type: "user", cwd: "/p", timestamp: new Date(lastEventMs).toISOString() }];
       if (lastEventMs !== null) lines.push({ type: "system", cwd: "/p", timestamp: new Date(lastEventMs).toISOString() });
       // Metadata records after the last turn carry no timestamp.
-      fs.writeFileSync(file, [...lines.slice(lastEventMs === null ? 1 : 0).map((l) => JSON.stringify(l)), JSON.stringify({ type: "ai-title", aiTitle: id })].join("\n") + "\n");
+      fs.writeFileSync(file, [...lines.map((l) => JSON.stringify(l)), JSON.stringify({ type: "ai-title", aiTitle: id })].join("\n") + "\n");
       fs.utimesSync(file, new Date(fileMtimeMs), new Date(fileMtimeMs));
     };
     const week = 8 * 24 * 3600_000;

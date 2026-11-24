@@ -27,6 +27,7 @@
 
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 import { LiveSession, liveSessionPids, liveSessions } from "./api.js";
@@ -104,6 +105,41 @@ export function readSessionHeader(file: string): SessionHeader {
   } finally {
     fs.closeSync(fd);
   }
+}
+
+/** Encoded transcript dirs of the OS temp folders, the folder itself or anything under it. */
+function tempProjectPrefixes(): string[] {
+  const roots = ["/tmp", "/private/tmp", "/var/folders", "/private/var/folders", os.tmpdir()];
+  try {
+    roots.push(fs.realpathSync(os.tmpdir()));
+  } catch {
+    // An unreadable temp dir only loses its realpath alias.
+  }
+  return [...new Set(roots.map(encodeProjectDir))];
+}
+
+/** A session in a temp folder: AI-council calls, scratchpad probes, test runs.
+ *  Tool plumbing, not the user's work, so the list leaves it out (owner, 2026-11-24). */
+function inTempFolder(projectDir: string, temp: readonly string[]): boolean {
+  return temp.some((p) => projectDir === p || projectDir.startsWith(`${p}-`));
+}
+
+/** Opened and closed before a word was said: no user or assistant record. Anything past
+ *  the head cap has content; a smaller file is read whole, once per size. */
+const emptyCache = new Map<string, { size: number; empty: boolean }>();
+function isEmptyTranscript(file: string, st: fs.Stats): boolean {
+  if (st.size > HEADER_CAP) return false;
+  const hit = emptyCache.get(file);
+  if (hit && hit.size === st.size) return hit.empty;
+  let empty = false;
+  try {
+    const text = fs.readFileSync(file, "utf8");
+    empty = !text.includes('"type":"user"') && !text.includes('"type":"assistant"');
+  } catch {
+    // Unreadable: keep it listed rather than hide something by mistake.
+  }
+  emptyCache.set(file, { size: st.size, empty });
+  return empty;
 }
 
 /** The newest event `timestamp` in a transcript's tail, or null when the tail
@@ -255,7 +291,9 @@ export function listSessions(configDir: string, limit: number, readHeader: (file
     return [];
   }
   const found: { file: string; sessionId: string; projectDir: string; st: fs.Stats }[] = [];
+  const temp = tempProjectPrefixes();
   for (const d of dirs) {
+    if (inTempFolder(d.name, temp)) continue;
     // A shared-history tree links `projects/` itself, not its children — but be
     // tolerant of either; only descend into directories (or links to them).
     const dirPath = path.join(projects, d.name);
@@ -276,6 +314,8 @@ export function listSessions(configDir: string, limit: number, readHeader: (file
         continue;
       }
       if (!st.isFile()) continue;
+      // Left out before the cap, so a hidden session never takes a listed one's slot.
+      if (isEmptyTranscript(file, st)) continue;
       found.push({ file, sessionId: entry.slice(0, -".jsonl".length), projectDir: d.name, st });
     }
   }
