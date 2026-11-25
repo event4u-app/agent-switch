@@ -49,26 +49,27 @@ describe("tab strip state", () => {
     expect(forced.pinned).toEqual([]);
   });
 
-  it("close others / to the right / all unpinned spare the pinned tabs", () => {
+  it("close others / to the right / all unpinned spare the pinned tabs and the main tab", () => {
     const s = pinTab(strip("s1", "s2", "s3", "s4"), "s4");
-    // Order is now s4 (pinned), s1, s2, s3.
-    expect(closeOthers(s, "s2").order).toEqual(["s4", "s2"]);
+    // Order is now s4 (pinned), s1 (the main tab), s2, s3.
+    expect(closeOthers(s, "s2").order).toEqual(["s4", "s1", "s2"]);
     expect(closeToRight(s, "s1").order).toEqual(["s4", "s1"]);
-    expect(closeToRight(s, "s4").order).toEqual(["s4"]);
-    expect(closeUnpinned(s).order).toEqual(["s4"]);
-    expect(closable(s, s.order)).toEqual(["s1", "s2", "s3"]);
+    expect(closeToRight(s, "s4").order).toEqual(["s4", "s1"]);
+    expect(closeUnpinned(s).order).toEqual(["s4", "s1"]);
+    expect(closable(s, s.order)).toEqual(["s2", "s3"]);
   });
 
   it("reopens the last closed tab where it stood, pinned again if it was", () => {
+    // s1 is the main tab and stays; s2 closes, then the pinned s3.
     let s = pinTab(strip("s1", "s2", "s3"), "s3");
-    s = closeTab(s, "s1");
+    s = closeTab(s, "s2");
     s = closeTab(s, "s3", true);
     let r = reopenTab(s, all);
     expect(r.id).toBe("s3");
-    expect(r.state.order).toEqual(["s3", "s2"]);
+    expect(r.state.order).toEqual(["s3", "s1"]);
     expect(r.state.pinned).toEqual(["s3"]);
     r = reopenTab(r.state, all);
-    expect(r.id).toBe("s1");
+    expect(r.id).toBe("s2");
     expect(r.state.order).toEqual(["s3", "s1", "s2"]);
     expect(canReopen(r.state)).toBe(false);
     expect(reopenTab(r.state, all).id).toBeNull();
@@ -135,5 +136,17 @@ describe("the default tab and more tabs of one session (owner, 2026-11-25)", () 
     expect(openAnother(one.state, "a", "a#2").id).toBe("a#3");
     expect(openAnother(s, "c").state.order).toEqual(["a", "b", "c"]);
     expect([sessionOf("a#2"), sessionOf("a"), sessionOf("page:x")]).toEqual(["a", "a", "page:x"]);
+  });
+});
+
+describe("the main tab cannot be closed (owner, 2026-11-25)", () => {
+  it("no close path takes the first unpinned session tab", async () => {
+    const { closeTab, closeOthers, closeUnpinned, closable, mainTab, EMPTY_TABS: E } = await import("./tabs.js");
+    const s = { ...E, order: ["p", "page:library", "a", "b"], pinned: ["p"] };
+    expect(mainTab(s)).toBe("a");
+    expect(closeTab(s, "a", true).order).toContain("a");
+    expect(closeOthers(s, "b").order).toEqual(["p", "a", "b"]);
+    expect(closeUnpinned(s).order).toEqual(["p", "a"]);
+    expect(closable(s, ["a", "b"])).toEqual(["b"]);
   });
 });

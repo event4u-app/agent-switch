@@ -111,7 +111,9 @@ export function unpinTab(s: TabState, id: string): TabState {
  * close (its button, middle click, "close others") never takes a pinned tab.
  */
 export function closeTabs(s: TabState, ids: readonly string[], force = false): TabState {
-  const gone = ids.filter((id) => s.order.includes(id) && (force || !isPinned(s, id)));
+  // The main tab never closes, by any path (owner, 2026-11-25).
+  const main = mainTab(s);
+  const gone = ids.filter((id) => s.order.includes(id) && id !== main && (force || !isPinned(s, id)));
   if (!gone.length) return s;
   const closed = [...s.closed, ...gone.map((id) => ({ id, index: s.order.indexOf(id), pinned: isPinned(s, id) }))].slice(-CLOSED_KEEP);
   return settle({ order: s.order.filter((id) => !gone.includes(id)), pinned: s.pinned.filter((id) => !gone.includes(id)), closed });
@@ -129,7 +131,10 @@ export const closeToRight = (s: TabState, id: string): TabState => closeTabs(s, 
 export const closeUnpinned = (s: TabState): TabState => closeTabs(s, s.order);
 
 /** The tabs a close of `ids` would actually take (pinned ones stay). */
-export const closable = (s: TabState, ids: readonly string[]): string[] => ids.filter((id) => s.order.includes(id) && !isPinned(s, id));
+export const closable = (s: TabState, ids: readonly string[]): string[] => ids.filter((id) => s.order.includes(id) && !isPinned(s, id) && id !== mainTab(s));
+
+/** The main tab: the first session tab that is not pinned. Everything opens there; it cannot be closed (owner, 2026-11-25). Pure. */
+export const mainTab = (s: TabState): string | null => s.order.find((id) => !isPageTab(id) && !s.pinned.includes(id)) ?? null;
 
 /**
  * Reopen the most recently closed tab that can still open (`exists`) and is

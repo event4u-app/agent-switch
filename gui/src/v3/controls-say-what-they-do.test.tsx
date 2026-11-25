@@ -94,12 +94,11 @@ describe("End… opens the End dialog", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("Just close the tab closes the tab and ends nothing", () => {
+  it("in the main tab End offers no Just close the tab: that tab stays (owner, 2026-11-25)", () => {
     const act = mount({ health: READY });
     sessionMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: "End…" }));
-    fireEvent.click(screen.getByRole("button", { name: "Just close the tab" }));
-    expect(screen.queryByRole("tab", { name: /Event store/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Just close the tab" })).toBeNull();
     expect(act).not.toHaveBeenCalledWith(expect.objectContaining({ type: "end" }));
   });
 });

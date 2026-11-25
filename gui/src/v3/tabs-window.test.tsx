@@ -45,37 +45,41 @@ describe("tabs: pin, close, reopen, sort (owner request 2026-11-05)", () => {
     expect(screen.queryByRole("tab", { name: /Checkout flow/ })).toBeNull();
   });
 
-  it("an unpinned tab closes on a middle click", () => {
+  it("an unpinned tab closes on a middle click; the main tab does not", () => {
     mount();
+    fireEvent(tab("Checkout flow"), new MouseEvent("auxclick", { bubbles: true, button: 1 }));
+    expect(titles()).toEqual(["Event store", "Themes"]);
     fireEvent(tab("Event store"), new MouseEvent("auxclick", { bubbles: true, button: 1 }));
-    expect(titles()).toEqual(["Checkout flow", "Themes"]);
+    expect(titles()).toEqual(["Event store", "Themes"]);
+    expect(closeX("Event store")).toBeNull();
   });
 
   it("⇧⌘T and the menu reopen closed tabs where they stood, last closed first", () => {
     mount();
     fireEvent.click(closeX("Checkout flow")!);
-    fireEvent.click(closeX("Event store")!);
-    expect(titles()).toEqual(["Themes"]);
+    fireEvent.click(closeX("Themes")!);
+    expect(titles()).toEqual(["Event store"]);
     fireEvent.keyDown(window, { key: "t", metaKey: true, shiftKey: true });
     expect(titles()).toEqual(["Event store", "Themes"]);
-    expect(tab("Event store").getAttribute("aria-selected")).toBe("true");
-    menu("Themes");
+    expect(tab("Themes").getAttribute("aria-selected")).toBe("true");
+    menu("Event store");
     pick(/Reopen closed tab/);
     expect(titles()).toEqual(["Event store", "Checkout flow", "Themes"]);
-    menu("Themes");
+    menu("Event store");
     expect(screen.getByRole("menuitem", { name: /Reopen closed tab/ }).getAttribute("aria-disabled")).toBe("true");
   });
 
-  it("close others / to the right / all unpinned keep the pinned tab", () => {
+  it("close others / to the right / all unpinned keep the pinned tab and the main tab", () => {
     mount({ tabs: ["s1", "s2", "s3"], pinned: ["s1"], active: "s2" });
+    // s1 pinned; s2 (Checkout flow) is the main tab now.
     menu("Themes");
     pick("Close other tabs");
-    expect(titles()).toEqual(["Event store", "Themes"]);
+    expect(titles()).toEqual(["Event store", "Checkout flow", "Themes"]);
     menu("Event store");
     pick("Close tabs to the right");
-    expect(titles()).toEqual(["Event store"]);
-    expect(tab("Event store").getAttribute("aria-selected")).toBe("true");
-    menu("Event store");
+    expect(titles()).toEqual(["Event store", "Checkout flow"]);
+    menu("Checkout flow");
+    expect(screen.getByRole("menuitem", { name: /^Close tab(?!s)/ }).getAttribute("aria-disabled")).toBe("true");
     expect(screen.getByRole("menuitem", { name: "Close all unpinned tabs" }).getAttribute("aria-disabled")).toBe("true");
   });
 

@@ -648,7 +648,7 @@ export function TakeoverDialog({ facts, busy, error, onTakeOver, onClose }: { fa
   );
 }
 
-export function EndDialog({ title, stops, kept, onEnd, onCloseTab, onClose }: { title: string; stops: string[]; kept: boolean; onEnd: () => void; onCloseTab: () => void; onClose: () => void }) {
+export function EndDialog({ title, stops, kept, onEnd, onCloseTab, onClose }: { title: string; stops: string[]; kept: boolean; onEnd: () => void; /** Absent: the session is in the main tab, which does not close. */ onCloseTab?: () => void; onClose: () => void }) {
   return (
     <Modal
       title={`End “${title}”?`}
@@ -659,9 +659,11 @@ export function EndDialog({ title, stops, kept, onEnd, onCloseTab, onClose }: { 
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="secondary" onClick={onCloseTab}>
-            Just close the tab
-          </Button>
+          {onCloseTab && (
+            <Button variant="secondary" onClick={onCloseTab}>
+              Just close the tab
+            </Button>
+          )}
           <Button variant="danger" onClick={onEnd}>
             End session
           </Button>

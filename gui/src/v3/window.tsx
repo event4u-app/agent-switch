@@ -39,7 +39,7 @@ import { AccountMark, Act, inShell, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding } from "./keys.js";
-import { EMPTY_TABS, canReopen, closable, closeOthers, closeTab, closeToRight, closeUnpinned, isPageTab, moveTab, nextActive, openAnother, openInDefault, openTab, pinTab, reopenTab, seedTabs, sessionOf, unpinTab, type TabState } from "./tabs.js";
+import { EMPTY_TABS, canReopen, closable, closeOthers, closeTab, closeToRight, closeUnpinned, isPageTab, mainTab, moveTab, nextActive, openAnother, openInDefault, openTab, pinTab, reopenTab, seedTabs, sessionOf, unpinTab, type TabState } from "./tabs.js";
 import { NeedRow, needSession, nextFocus, shownNeeds } from "./needs.js";
 import { canCopy, copyConversation } from "./copy-source.js";
 import { Switcher } from "./overlays.js";
@@ -392,7 +392,7 @@ export function V3Window({
         : { id: "pin", label: "Pin tab", icon: <Pin />, onClick: run(() => setStrip((s) => pinTab(s, id))) },
       ...(isPageTab(id) ? [] : [{ id: "duplicate", label: "Duplicate tab", icon: <Copy />, onClick: run(() => openInNewTab(sessionOf(id), id)) }]),
       { divider: true, label: "" },
-      { id: "close", label: pinnedTab ? "Close pinned tab" : "Close tab", icon: <X />, onClick: run(() => changeStrip((s) => closeTab(s, id, true))) },
+      { id: "close", label: pinnedTab ? "Close pinned tab" : "Close tab", icon: <X />, ...(id === mainTab(strip) ? { disabled: true, why: "The main tab stays: everything opens in it" } : {}), onClick: run(() => changeStrip((s) => closeTab(s, id, true))) },
       { id: "close-others", label: "Close other tabs", disabled: !closable(strip, strip.order.filter((x) => x !== id)).length, onClick: run(() => changeStrip((s) => closeOthers(s, id))) },
       { id: "close-right", label: "Close tabs to the right", icon: <ArrowRightToLine />, disabled: !closable(strip, after).length, onClick: run(() => changeStrip((s) => closeToRight(s, id))) },
       { id: "close-unpinned", label: "Close all unpinned tabs", disabled: !closable(strip, strip.order).length, onClick: run(() => changeStrip(closeUnpinned)) },
@@ -778,6 +778,7 @@ export function V3Window({
         onSelect={setActive}
         // A session tab only leaves the strip; the session keeps running in the sidebar (spec §6.1).
         onClose={(id) => changeStrip((s) => closeTab(s, id))}
+        mainId={mainTab(strip)}
         pinned={new Set(strip.pinned)}
         onMenu={(id, at) => setOverlay({ tabMenu: id, ...shellPoint(at) })}
         onMove={(id, target, side) => setStrip((s) => moveTab(s, id, target, side))}
@@ -1142,11 +1143,12 @@ export function V3Window({
         {...endFacts(overlay.end)}
         onClose={close}
         onEnd={() => (close(), act({ type: "end", key: overlay.end }))}
-        onCloseTab={() => {
-          const key = overlay.end;
+        // A session in the main tab offers no "Just close the tab": that tab stays.
+        onCloseTab={strip.order.some((id) => sessionOf(id) === overlay.end && id !== mainTab(strip)) ? () => {
+          const key = strip.order.find((id) => sessionOf(id) === overlay.end && id !== mainTab(strip))!;
           close();
           changeStrip((s) => closeTab(s, key, true));
-        }}
+        } : undefined}
       />
     ) : null;
 

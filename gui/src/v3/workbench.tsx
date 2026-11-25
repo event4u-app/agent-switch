@@ -38,7 +38,10 @@ export function TabStrip({
   pinned,
   onMenu,
   onMove,
+  mainId,
 }: {
+  /** The main tab: everything opens there, so it has no close (owner, 2026-11-25). */
+  mainId?: string | null;
   tabs: TabItem[];
   activeId: string;
   onSelect: (id: string) => void;
@@ -131,7 +134,7 @@ export function TabStrip({
                 e.key === "ArrowRight" ? at(i + 1) : e.key === "ArrowLeft" ? at(i - 1) : e.key === "Home" ? at(0) : e.key === "End" ? at(ordered.length - 1) : null;
               if (go) focusTab(strip, go);
               else if (e.key === "Enter" || e.key === " ") onSelect(t.id);
-              else if ((e.key === "Delete" || e.key === "Backspace") && !pin) {
+              else if ((e.key === "Delete" || e.key === "Backspace") && !pin && t.id !== mainId) {
                 refocus.current = ordered.length > 1 ? (i + 1 < ordered.length ? at(i + 1) : at(i - 1)) ?? null : null;
                 onClose(t.id);
               } else return;
@@ -148,7 +151,7 @@ export function TabStrip({
             }}
             onAuxClick={(e) => {
               // Middle click closes, like a browser — never a pinned tab.
-              if (e.button === 1 && !pin) (e.preventDefault(), onClose(t.id));
+              if (e.button === 1 && !pin && t.id !== mainId) (e.preventDefault(), onClose(t.id));
             }}
             onContextMenu={(e) => {
               if (!onMenu) return;
@@ -191,10 +194,10 @@ export function TabStrip({
               // The shortcut sits in the slot; hover or keyboard focus swaps it for the × (spec §6.1: closing keeps the session).
               // The × is pointer-only and hidden from the a11y tree: a tab may hold no control, and Delete closes it.
               <span className="relative ml-auto inline-flex h-4 min-w-4 shrink-0 items-center justify-end">
-                {idx <= 9 && <span className="font-ac-mono text-[10px] text-ac-muted group-hover:invisible group-focus-visible:invisible">⌘{idx}</span>}
-                <span aria-hidden data-tab-close onClick={(e) => (e.stopPropagation(), onClose(t.id))} className="absolute inset-y-0 right-0 inline-flex cursor-pointer items-center rounded opacity-0 hover:bg-ac-raise group-hover:opacity-100 group-focus-visible:opacity-100">
+                {idx <= 9 && <span className={cn("font-ac-mono text-[10px] text-ac-muted", t.id !== mainId && "group-hover:invisible group-focus-visible:invisible")}>⌘{idx}</span>}
+                {t.id !== mainId && <span aria-hidden data-tab-close onClick={(e) => (e.stopPropagation(), onClose(t.id))} className="absolute inset-y-0 right-0 inline-flex cursor-pointer items-center rounded opacity-0 hover:bg-ac-raise group-hover:opacity-100 group-focus-visible:opacity-100">
                   <X className="size-3 text-ac-muted hover:text-ac-text" />
-                </span>
+                </span>}
               </span>
             ) : (
               <span aria-hidden data-tab-close onClick={(e) => (e.stopPropagation(), onClose(t.id))} className="inline-flex cursor-pointer">
