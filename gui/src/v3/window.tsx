@@ -28,7 +28,7 @@ import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } fro
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession, type StatusTab } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
 import type { ReviewFocus } from "./review.js";
-import { DEFAULT_SORT, SessionsZone, endedRows, statusGroup, sortLive, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
+import { DEFAULT_SORT, SessionsZone, statusGroup, sortLive, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
 import { Segmented } from "../ui/Segmented.js";
 import { SubagentView } from "./subagent-view.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
@@ -297,7 +297,8 @@ export function V3Window({
     setStrip((cur) => openTab(cur, `page:${p}`));
     setActive(`page:${p}`);
   }, []);
-  const frame = useFrame(openPage);
+  // Done today and Older in the stripe open All sessions on that tab (owner, 2026-11-25).
+  const frame = useFrame((p) => (p === ("done-today" as PageId) || p === ("older" as PageId) ? (setTableTab((t) => ({ status: p === ("older" as PageId) ? "older" : "today", n: t.n + 1 })), openPage("sessions-table")) : openPage(p)));
   /** The tab All sessions opens on, and a counter that remounts it when Done today or Older asks again. */
   const [tableTab, setTableTab] = useState<{ status: StatusTab; n: number }>({ status: "all", n: 0 });
   /** The session's Review tab, at `file` when one was picked; every open is new, so the review goes back to Uncommitted. */
@@ -952,16 +953,6 @@ export function V3Window({
           batch={batch([...(selection ?? [])])}
         />
         )}
-      </div>
-      <div data-pane-foot="" className="shrink-0 border-t border-ac-line px-2.5 py-2">
-        <div className="grid grid-cols-2 gap-1.5">
-          {endedRows(data.sessions, data.nowMs, lastActiveOf).map((g) => (
-            <button key={g.id} type="button" data-done-groups="" onClick={() => (setTableTab((t) => ({ status: g.id === "Older" ? "older" : "today", n: t.n + 1 })), openPage("sessions-table"))} title={`Open All sessions · ${g.id}`} className="flex h-7 items-center justify-between gap-1.5 rounded-md bg-ac-raise px-2.5 text-[12px] text-ac-soft hover:text-ac-text">
-              <span className="truncate">{g.id}</span>
-              <PaneCount n={g.count} />
-            </button>
-          ))}
-        </div>
       </div>
       <LimitsStrip accounts={data.limits} nowMs={data.nowMs} openKey={limitsOpen} currentKey={bar && activeSession ? (data.limits.find((l) => l.tool === activeSession.split("/")[0] && l.name === bar.account.name)?.key ?? null) : null} onOpen={(key) => setOverlay((o) => (o && typeof o === "object" && "limits" in o && o.limits === key ? null : { limits: key }))} onSignIn={(key) => act({ type: "account", op: "sign-in", key })} />
     </aside>

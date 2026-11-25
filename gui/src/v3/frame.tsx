@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useState, type ReactNode } from "react";
-import { Bell, FileDiff, History, Inbox, Layers, Library, ListTree, Network, PanelLeft, Plus, Search, Settings, Swords, TriangleAlert, Users, Gavel, Wrench } from "lucide-react";
+import { Archive, Bell, CalendarCheck, FileDiff, History, Inbox, Layers, Library, ListTree, Network, PanelLeft, Plus, Search, Settings, Swords, TriangleAlert, Users, Gavel, Wrench } from "lucide-react";
 import type { RunKind } from "./runs.js";
 import { cn } from "../lib/utils.js";
 import { AppLogo } from "../ui/AppLogo.js";
@@ -111,10 +111,13 @@ export interface StripeItem {
   badge?: number;
   /** Sits in the group pinned to the stripe's bottom. */
   bottom?: boolean;
+  /** A short rule above it: a new group starts. */
+  gap?: boolean;
 }
 
 export function Stripe({ side, items, active, why, onSelect }: { side: "left" | "right"; items: StripeItem[]; active?: string | readonly string[] | null; /** Why no button can act here (a page tab has no session); absent: they can. */ why?: string | null; onSelect: (id: string) => void }) {
-  const button = (it: StripeItem) => {
+  const button = (it: StripeItem) => [it.gap ? <span key={`gap:${it.id}`} aria-hidden data-stripe-gap="" className="my-1 h-px w-6 bg-ac-line" /> : null, one(it)];
+  const one = (it: StripeItem) => {
     const on = !why && (Array.isArray(active) ? active.includes(it.id) : it.id === active);
     const label = it.badge ? `${it.label.trim()} · ${it.badge} running` : it.label;
     return (
@@ -157,6 +160,9 @@ export function leftItems(needsYouHidden: boolean, running: Record<RunKind, numb
     { id: "library", label: "Library", icon: <Library /> },
     { id: "accounts", label: "Accounts", icon: <Layers /> },
     { id: "tools", label: "Tools", icon: <Wrench /> },
+    // Ended sessions, one click from anywhere (owner, 2026-11-25): All sessions on that tab; no count.
+    { id: "done-today", label: "Done today", icon: <CalendarCheck />, gap: true },
+    { id: "older", label: "Older", icon: <Archive /> },
     // Bottom (owner, 2026-11-25): what runs across sessions, each with its running count — Councils, Arenas, Panels.
     { id: "councils", label: "Councils", icon: <Users />, badge: running.council, bottom: true },
     { id: "arenas", label: "Arenas", icon: <Swords />, badge: running.arena, bottom: true },

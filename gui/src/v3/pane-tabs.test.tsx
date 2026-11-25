@@ -68,13 +68,14 @@ describe("the Sessions window's tabs", () => {
     expect(win.queryByLabelText("Filter sessions")).toBeNull();
   });
 
-  it("Done today and Older sit side by side at the foot and open All sessions", () => {
+  it("Done today and Older live in the left stripe as icons, no count; each opens All sessions on its tab", () => {
     const win = mount();
-    const done = win.getByTitle("Open All sessions · Done today");
-    expect(done.textContent).toBe("Done today1");
-    expect(win.getByTitle("Open All sessions · Older").textContent).toBe("Older0");
+    expect(win.queryByText("Done today")).toBeNull();
+    const done = screen.getByRole("button", { name: "Done today" });
+    expect(done.textContent).toBe("");
     fireEvent.click(done);
-    expect(screen.getAllByText("All sessions").length).toBeGreaterThan(0);
+    expect(screen.getByRole("tab", { name: /All sessions/ }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("button", { name: "Older" })).toBeTruthy();
   });
 });
 
