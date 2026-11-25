@@ -94,7 +94,8 @@ describe("one Needs-you count for window and tray (5.3)", () => {
   it("the window and the tray show the same number for the same data", () => {
     const d = data();
     const w = render(<V3Window data={d} slots={slots} act={vi.fn()} />);
-    const inWindow = count(w.container.querySelector("section[aria-label='Needs you']")!);
+    // The window counts them on its For you tab (owner, 2026-11-25).
+    const inWindow = within(w.container).getByRole("radio", { name: /^For you/ }).textContent!.replace(/\D/g, "");
     cleanup();
     const t = render(<V3Tray nowMs={d.nowMs} needs={allNeeds(d)} away={d.away} sessions={d.sessions} accounts={d.limits} on={on()} />);
     expect(count(t.container.querySelector("section[aria-label='Needs you']")!)).toBe(inWindow);

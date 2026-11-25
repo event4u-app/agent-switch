@@ -96,7 +96,10 @@ export function NeedsZone({
   onAway,
   tray,
   always,
+  full,
 }: {
+  /** The window's "For you" tab (owner, 2026-11-25): every item, no head (the tab names it), no "N more". */
+  full?: boolean;
   /** Whether an approval can be answered "always" here (its chat runs in this window); all when absent. */
   always?: (n: NeedItem) => boolean;
   /** The tray card's variant (board "tray"): a 24 px head without the ⌘J hint. */
@@ -108,17 +111,17 @@ export function NeedsZone({
   onMore: () => void;
   onAway: () => void;
 }) {
-  if (items.length === 0 && !away) return null;
+  if (items.length === 0 && !away) return full ? <p className="px-3.5 py-2 text-[12px] text-ac-muted">Nothing needs you right now.</p> : null;
   // A focused item further down the queue is shown in place of the last row, so ⌘J is always visible.
-  const shown = shownNeeds(items, focusedId);
+  const shown = full ? items : shownNeeds(items, focusedId);
   const updates = away ? away.finishedTurns + away.stoppedOnError + away.resolved + away.mergedPrs + away.ciBreaks : 0;
   return (
-    <section aria-label="Needs you" className={tray ? "pt-1" : undefined}>
-      <div className={cn("flex items-center gap-2 bg-ac-panel px-3.5", tray ? "h-6" : "sticky top-0 z-[1] h-8")}>
+    <section aria-label="Needs you" className={tray ? "pt-1" : full ? "pt-1" : undefined}>
+      {!full && <div className={cn("flex items-center gap-2 bg-ac-panel px-3.5", tray ? "h-6" : "sticky top-0 z-[1] h-8")}>
         <span className="text-[11px] font-semibold text-ac-soft">Needs you</span>
         <span className="text-[11px] text-ac-muted">{items.length}</span>
         {!tray && <span className="ml-auto font-ac-mono text-[10.5px] text-ac-muted">⌘J</span>}
-      </div>
+      </div>}
       <div className="px-1.5">
         {away && updates > 0 && (
           <button type="button" onClick={onAway} className="flex h-6 w-full items-center rounded-md px-2 text-left text-[12px] text-ac-soft hover:bg-ac-raise">
@@ -128,7 +131,7 @@ export function NeedsZone({
         {shown.map((n, i) => (
           <NeedRow key={n.id} n={n} top={i === 0 && !focusedId} focused={n.id === focusedId} always={always?.(n) ?? true} onVerb={onVerb} />
         ))}
-        {items.length > MAX_ROWS && (
+        {!full && items.length > MAX_ROWS && (
           <button type="button" onClick={onMore} className="h-6 px-2 text-[11px] text-ac-muted hover:text-ac-text">
             {items.length - MAX_ROWS} more ›
           </button>

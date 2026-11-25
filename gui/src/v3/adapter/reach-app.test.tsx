@@ -100,6 +100,8 @@ async function mount({ engineRunning = true } = {}) {
 
 /** Idle starts folded (owner, 2026-11-24): open it to reach an idle session's row. Not counted as a user click. */
 function openIdle() {
+  // Idle sessions are listed on the All tab (owner, 2026-11-25); opening it was never a counted click.
+  fireEvent.click(screen.getByRole("radio", { name: /^All/ }));
   const idle = within(screen.getByLabelText("Sessions window")).queryByRole("button", { expanded: false, name: /^Idle/ });
   if (idle) fireEvent.click(idle);
 }
@@ -115,6 +117,7 @@ afterEach(() => {
 describe("V3App on fixture CLI output (spec §11)", () => {
   it("Overview: the needs item and the running session come from the CLI", async () => {
     await mount();
+    fireEvent.click(await screen.findByRole("radio", { name: /^For you/ }));
     expect(await screen.findByText("94% of 5h")).toBeTruthy();
     openIdle();
     expect(within(screen.getByLabelText("Sessions window")).getByText("Event store")).toBeTruthy();
@@ -141,13 +144,14 @@ describe("V3App on fixture CLI output (spec §11)", () => {
   it("Near-limit decision: Decide opens the sheet and changes nothing", async () => {
     await mount();
     const before = calls.length;
+    click(await screen.findByRole("radio", { name: /^For you/ }));
     click(await screen.findByText("Decide"));
     expect(await screen.findByText(/Nothing changes until you choose/)).toBeTruthy();
     // Nothing moves or switches until a choice is made. Background engines (the
     // updater, the usage refresh) may run meanwhile; they are not the sheet's doing.
     const MOVES = new Set(["rebind", "takeover", "use", "handoff", "host", "compact"]);
     expect(calls.slice(before).filter((c) => MOVES.has(c.args[0]))).toEqual([]);
-    expect(clicks).toBe(1);
+    expect(clicks).toBe(2);
   });
 
   it("Settings › Open in lists the targets the CLI reported", async () => {
@@ -173,6 +177,7 @@ describe("V3App on fixture CLI output (spec §11)", () => {
 
   it("Health: a running engine does not", async () => {
     await mount();
+    fireEvent.click(await screen.findByRole("radio", { name: /^For you/ }));
     await screen.findByText("94% of 5h");
     expect(screen.queryByText("Engine stopped")).toBeNull();
   });

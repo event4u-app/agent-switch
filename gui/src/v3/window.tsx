@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "../lib/utils.js";
-import { ArrowLeftRight, ArrowRightToLine, ClipboardCopy, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, SquareTerminal, Swords, Unplug, Users, Gavel, Wrench, X } from "lucide-react";
+import { ArrowLeftRight, ArrowRightToLine, ClipboardCopy, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, SquareTerminal, Search, Swords, Unplug, Users, Gavel, Wrench, X } from "lucide-react";
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
 import type { ActivityEvent, IdentityColor, ToolEntry } from "../vm/types.js";
@@ -28,7 +28,8 @@ import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } fro
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession, type StatusTab } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
 import type { ReviewFocus } from "./review.js";
-import { DEFAULT_SORT, SessionsZone, sortLive, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
+import { DEFAULT_SORT, SessionsZone, endedRows, statusGroup, sortLive, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
+import { Segmented } from "../ui/Segmented.js";
 import { SubagentView } from "./subagent-view.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
@@ -274,6 +275,10 @@ export function V3Window({
   const [tableGroup, setTableGroup] = useState<"none" | "project" | undefined>(saved?.tableGroup);
   const [pinnedOnly, setPinnedOnly] = useState(saved?.pinnedOnly ?? false);
   const [focusedNeed, setFocusedNeed] = useState<string | null>(null);
+  // Opens on Running, as alternative B shows it (owner, 2026-11-25); ⌘J brings For you to the front.
+  const [paneTab, setPaneTab] = useState<"you" | "running" | "all">("running");
+  const [paneQuery, setPaneQuery] = useState("");
+
   const lastActiveOf = (k: string) => data.table.find((t) => t.key === k)?.lastActiveMs ?? null;
   const [focusChild, setFocusChild] = useState<string | null>(null);
   // Hover peek (spec §5.2): after 400 ms on a row, one card at a time, never while a layer is open.
@@ -475,6 +480,10 @@ export function V3Window({
     const now = document.activeElement as HTMLElement | null;
     if (focusedNeed) {
       holdNeedOpener();
+      // ⌘J walks the For you items: that tab comes to the front first, then the item takes focus.
+      // An item about a child focuses the child's row in the tree instead, so the list stays (All when on For you).
+      const want = focusChild ? (paneTab === "you" ? "all" : paneTab) : "you";
+      if (paneTab !== want) return setPaneTab(want);
       if (!focusChild) [...document.querySelectorAll<HTMLElement>("[data-need]")].find((el) => el.dataset.need === focusedNeed)?.focus();
       return;
     }
@@ -483,7 +492,7 @@ export function V3Window({
     const lost = !now || now === document.body || !now.isConnected || zoneHolds(now);
     if (opener?.isConnected && lost) opener.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusedNeed]);
+  }, [focusedNeed, paneTab]);
   // A session at its limit opens its decision sheet by itself (once per item
   // version) and brings the window forward — the user still confirms the move.
   // agent-config's question opens it too (once per request), and a limit it
@@ -856,6 +865,12 @@ export function V3Window({
     return { title: c.label, state: c.state, lastActiveMs: t?.lastActiveMs ?? null, tool: tool[0].toUpperCase() + tool.slice(1), account: t?.account.name ?? c.account?.name ?? "", color, model: t?.model ?? null, thinking: t?.thinking ?? null, branch: t?.branch ?? (c.worktree ? `worktree ${c.worktree}` : hit.root.branch), pr: t?.pr ? { number: t.pr.number, state: t.pr.ci === "FAILURE" ? "CI failing" : "open" } : null, children: (c.children ?? []).reduce((n, k) => n + (k.count ?? 1), 0), lastLine: null };
   };
   const pinned = new Set(data.library.filter((l) => l.pinned).map((l) => l.key));
+  // The pane's tabs and filter (owner, 2026-11-25, alternative B + A's search).
+  const liveSessions = (pinnedOnly ? data.sessions.filter((x) => pinned.has(x.key)) : data.sessions).filter((x) => !x.doneToday && !x.older);
+  const q = paneQuery.trim().toLowerCase();
+  const hit = (...parts: (string | null | undefined)[]) => !q || parts.some((x) => x?.toLowerCase().includes(q));
+  const found = liveSessions.filter((x) => hit(x.title, x.branch, x.account.name, x.key));
+  const foundNeeds = needs.filter((n) => hit(n.who, n.what, n.detail, n.subject));
   const sessionsWindow = (
     <aside aria-label="Sessions window" data-loaded={data.loading ? "false" : "true"} aria-busy={data.loading || undefined} className="flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-ac-line bg-ac-panel">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-ac-line px-3">
@@ -869,15 +884,38 @@ export function V3Window({
           </IconButton>
         </span>
       </div>
+      {/* Alternative B (owner, 2026-11-25): three tabs instead of stacked zones — For you, Running, All —
+          one list at a time; the search from alternative A sits at the foot, over Done today and Older. */}
+      <div className="shrink-0 px-2.5 pt-2" data-pane-tabs="">
+        <Segmented
+          label="Show"
+          size="sm"
+          fill
+          value={paneTab}
+          onChange={setPaneTab}
+          options={[
+            { value: "you", label: <>For you <PaneCount n={needs.length} tone={needs.length ? "warn" : undefined} /></> },
+            { value: "running", label: <>Running <PaneCount n={liveSessions.filter((x) => statusGroup(x) === "Running").length} /></> },
+            { value: "all", label: <>All <PaneCount n={liveSessions.length} /></> },
+          ]}
+        />
+      </div>
       <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <NeedsZone items={needs} away={data.away} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
+        {paneTab === "you" ? (
+          <NeedsZone full items={foundNeeds} away={data.away} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
+        ) : (
         <SessionsZone
-          sessions={pinnedOnly ? data.sessions.filter((x) => pinned.has(x.key)) : data.sessions}
+          sessions={paneTab === "running" ? found.filter((x) => statusGroup(x) === "Running") : found}
           activeKey={activeSession}
-          comfortable={comfortable}
           sort={sortBy}
-          group={groupBy}
-          inNeeds={new Set(shownNeeds(needs, focusedNeed).map(needSession).filter((k): k is string => !!k))}
+          group={paneTab === "running" ? "none" : groupBy}
+          head={paneTab === "all"}
+          onView={(y) => setOverlay((o) => (o && typeof o === "object" && "listView" in o ? null : { listView: y }))}
+          viewOpen={!!overlay && typeof overlay === "object" && "listView" in overlay}
+          pinned={false}
+          card={paneTab === "running"}
+          comfortable={comfortable}
+          
           lastActiveOf={lastActiveOf}
           nowMs={data.nowMs}
           onSubagent={openSubagent}
@@ -888,13 +926,13 @@ export function V3Window({
             return groupBy === "project" ? (t.project ?? null) : groupBy === "account" ? t.account.name : groupBy === "tool" ? t.tool[0].toUpperCase() + t.tool.slice(1) : null;
           }}
           worktreeOf={(k) => data.table.find((x) => x.key === k)?.worktree ?? null}
-          onView={(y) => setOverlay((o) => (o && typeof o === "object" && "listView" in o ? null : { listView: y }))}
-          viewOpen={!!overlay && typeof overlay === "object" && "listView" in overlay}
+          
+          
           onStart={() => setOverlay("new")}
           loading={data.loading}
           onPeek={onPeek}
           focusKey={focusChild}
-          divider={needs.length > 0 || !!data.away}
+          divider={false}
           selection={selection}
           openKeys={openKids}
           onSelect={openSession}
@@ -904,6 +942,26 @@ export function V3Window({
           onDoneToday={(which) => (setTableTab((t) => ({ status: which ?? "all", n: t.n + 1 })), openPage("sessions-table"))}
           batch={batch([...(selection ?? [])])}
         />
+        )}
+      </div>
+      <div data-pane-foot="" className="shrink-0 space-y-1.5 border-t border-ac-line px-2.5 py-2">
+        <label className="flex h-7 items-center gap-2 rounded-md border border-ac-line2 bg-ac-bg px-2 text-[12px] text-ac-muted focus-within:border-ac-brand-line">
+          <Search aria-hidden className="size-3.5 shrink-0" />
+          <input aria-label="Filter sessions" placeholder="Filter…" value={paneQuery} onChange={(e) => setPaneQuery(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setPaneQuery("")} className="min-w-0 flex-1 bg-transparent text-ac-text shadow-none outline-none placeholder:text-ac-faint focus:outline-none focus-visible:outline-none" />
+          {paneQuery && (
+            <button type="button" aria-label="Clear filter" onClick={() => setPaneQuery("")} className="inline-flex size-4 items-center justify-center rounded text-ac-muted hover:text-ac-text">
+              <X className="size-3" />
+            </button>
+          )}
+        </label>
+        <div className="grid grid-cols-2 gap-1.5">
+          {endedRows(data.sessions, data.nowMs, lastActiveOf).map((g) => (
+            <button key={g.id} type="button" data-done-groups="" onClick={() => (setTableTab((t) => ({ status: g.id === "Older" ? "older" : "today", n: t.n + 1 })), openPage("sessions-table"))} title={`Open All sessions · ${g.id}`} className="flex h-7 items-center justify-between gap-1.5 rounded-md bg-ac-raise px-2.5 text-[12px] text-ac-soft hover:text-ac-text">
+              <span className="truncate">{g.id}</span>
+              <PaneCount n={g.count} />
+            </button>
+          ))}
+        </div>
       </div>
       <LimitsStrip accounts={data.limits} nowMs={data.nowMs} openKey={limitsOpen} currentKey={bar && activeSession ? (data.limits.find((l) => l.tool === activeSession.split("/")[0] && l.name === bar.account.name)?.key ?? null) : null} onOpen={(key) => setOverlay((o) => (o && typeof o === "object" && "limits" in o && o.limits === key ? null : { limits: key }))} onSignIn={(key) => act({ type: "account", op: "sign-in", key })} />
     </aside>
@@ -1077,4 +1135,9 @@ export function V3Window({
       actions={{ onSearch: () => setOverlay("palette"), onStart: () => setOverlay("new"), onSettings: () => openPage("settings"), onInbox: () => setOverlay((o) => (o === "inbox" ? null : "inbox")), onHistory: () => setOverlay((o) => (o === "history" ? null : "history")), onRestart: () => act({ type: "restart-engine" }) }}
     />
   );
+}
+
+/** A tab's or button's count, the pill the stripe and groups use. */
+function PaneCount({ n, tone }: { n: number; tone?: "warn" }) {
+  return <span className={cn("ml-1.5 inline-flex h-4 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-normal tabular-nums leading-none", tone === "warn" ? "bg-ac-warn-tint text-ac-warn-text" : "bg-ac-line text-ac-soft")}>{n}</span>;
 }

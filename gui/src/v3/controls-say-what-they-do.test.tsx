@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { V3Window, type V3Data } from "./window.js";
 import { data, slots } from "./window-fixture.js";
+import { paneTab } from "./pane-tabs.test-helper.js";
 import { AFTER_TURN_DOWN_WHY } from "./workbench.js";
 
 afterEach(cleanup);
@@ -32,6 +33,7 @@ describe("engine stopped: the session pane is stale; only what needs the backgro
   // Decide opens the decision sheet; a switch now is a CLI rebind and needs no service.
   it("Decide in Needs you opens the decision sheet; there, After this turn waits for the service and says so", () => {
     mount();
+    paneTab("For you");
     const decide = screen.getByRole("button", { name: "Decide" });
     expect(decide.getAttribute("aria-disabled")).toBeNull();
     fireEvent.click(decide);
@@ -45,6 +47,7 @@ describe("engine stopped: the session pane is stale; only what needs the backgro
 
   it("with the engine up After this turn is offered and chosen first", () => {
     mount({ health: READY });
+    paneTab("For you");
     fireEvent.click(screen.getByRole("button", { name: "Decide" }));
     const after = within(screen.getByRole("dialog")).getByRole("radio", { name: /After this turn/ });
     expect(after.getAttribute("aria-disabled")).toBeNull();
@@ -54,6 +57,7 @@ describe("engine stopped: the session pane is stale; only what needs the backgro
   // An answer goes through the chat's inbox (`needs allow`), never through the engine (arena r3 07 #1).
   it("Allow acts, and its keys answer", () => {
     const act = mount({ needs: [allow] });
+    paneTab("For you");
     const btn = screen.getByRole("button", { name: "Allow" });
     expect(btn.getAttribute("aria-disabled")).toBeNull();
     fireEvent.keyDown(window, { key: "j", metaKey: true });

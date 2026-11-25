@@ -705,6 +705,21 @@ export function SessionRow({
   );
 }
 
+/**
+ * Status grouping: ended sessions stay one click away in two rows pinned under the list,
+ * Done today and Older; each opens the All sessions window (owner, 2026-11-24).
+ * The data marks a long-quiet session `older` instead of `doneToday`; midnight still decides the row. Pure.
+ */
+export function endedRows(sessions: readonly RowSession[], nowMs: number | undefined, lastActiveOf: (key: string) => number | null = () => null): { id: "Done today" | "Older"; count: number }[] {
+  const ended = sessions.filter((s) => s.doneToday || s.older);
+  const midnight = nowMs == null ? null : new Date(nowMs).setHours(0, 0, 0, 0);
+  const endedAt = (s: RowSession) => s.lastActiveMs ?? lastActiveOf(s.key);
+  return [
+    { id: "Done today", count: ended.filter((s) => midnight == null || (endedAt(s) ?? midnight) >= midnight).length },
+    { id: "Older", count: ended.filter((s) => midnight != null && (endedAt(s) ?? midnight) < midnight).length },
+  ];
+}
+
 export function SessionsZone({
   sessions,
   activeKey,
@@ -734,7 +749,16 @@ export function SessionsZone({
   focusKey,
   inNeeds,
   batch,
+  head = true,
+  pinned = true,
+  card,
 }: {
+  /** The "Sessions N · Status" head; the window's tabs name the list instead (owner, 2026-11-25). */
+  head?: boolean;
+  /** Done today and Older pinned at the foot; the window draws them under its search instead. */
+  pinned?: boolean;
+  /** The Running tab: each session a card (owner, 2026-11-25, alternative B). */
+  card?: boolean;
   /** Sessions a row of the Needs-you zone already shows: under the status grouping they are not listed twice (proposal B). */
   inNeeds?: ReadonlySet<string>;
   /** The tray card's variant (board "tray"): a 24 px head. */
@@ -789,16 +813,7 @@ export function SessionsZone({
   const byKey = new Map(sorted.map((s) => [s.key, s]));
   const live = order.map((k) => byKey.get(k)!);
   const done = sessions.filter((s) => s.doneToday).length;
-  // Status grouping: ended sessions stay one click away in two rows pinned under the list,
-  // Done today and Older; each opens the All sessions window (owner, 2026-11-24).
-  // The data marks a long-quiet session `older` instead of `doneToday`; midnight still decides the row.
-  const ended = sessions.filter((s) => s.doneToday || s.older);
-  const midnight = nowMs == null ? null : new Date(nowMs).setHours(0, 0, 0, 0);
-  const endedAt = (s: RowSession) => s.lastActiveMs ?? lastActiveOf(s.key);
-  const doneRows = [
-    { id: "Done today", count: ended.filter((s) => midnight == null || (endedAt(s) ?? midnight) >= midnight).length },
-    { id: "Older", count: ended.filter((s) => midnight != null && (endedAt(s) ?? midnight) < midnight).length },
-  ].filter((g) => g.count > 0);
+  const doneRows = endedRows(sessions, nowMs, lastActiveOf).filter((g) => g.count > 0);
   const byStatus = group === "status";
   const grouped = byStatus || (group !== "none" && !!groupOf);
   const groupKey = (s: RowSession) => (byStatus ? statusGroup(s) : (groupOf!(s.key) ?? ""));
@@ -834,8 +849,8 @@ export function SessionsZone({
   return (
     // A column that fills the window, so Done today and Older sit at its foot, right above the limits.
     <section aria-label="Sessions" className="flex flex-1 flex-col">
-      {divider ? <div className="mx-3.5 my-1.5 h-px bg-ac-line" /> : <div className="h-2" />}
-      <div className={cn("flex items-center gap-2 px-3.5", tray ? "mt-0.5 h-6" : "sticky top-0 z-[1] h-8 bg-ac-panel")}>
+      {!head ? <div className="h-1.5" /> : divider ? <div className="mx-3.5 my-1.5 h-px bg-ac-line" /> : <div className="h-2" />}
+      {head && <div className={cn("flex items-center gap-2 px-3.5", tray ? "mt-0.5 h-6" : "sticky top-0 z-[1] h-8 bg-ac-panel")}>
         <span className="text-[11px] font-semibold text-ac-soft">Sessions</span>
         <span className="text-[11px] text-ac-muted">{live.length}</span>
         {onView && (
@@ -856,7 +871,7 @@ export function SessionsZone({
             <ChevronDown className="size-3" />
           </button>
         )}
-      </div>
+      </div>}
       {selection && <BatchBar compact count={selection.size} actions={batch} className="mx-1.5 mb-1" />}
       <div className="px-1.5" data-session-list {...holdBind}>
         {live.length === 0 && !loading && (
@@ -895,7 +910,8 @@ export function SessionsZone({
               <span>{wtRows.length}</span>
             </h4>
           ) : null,
-          ...wtRows.map((s) => (
+          ...wtRows.map((s) => {
+          const row = (
           <SessionRow
             key={s.key}
             s={s}
@@ -913,7 +929,16 @@ export function SessionsZone({
             focusKey={focusKey}
             age={ageOf(s)}
           />
-          )),
+          );
+          // A card: one frame per session, the open one framed in the accent.
+          return card ? (
+            <div key={s.key} data-session-card="" className={cn("mb-1.5 rounded-md border p-0.5", s.key === activeKey ? "border-ac-brand-line" : "border-ac-line bg-ac-bg/40")}>
+              {row}
+            </div>
+          ) : (
+            row
+          );
+          }),
           wtRows.length < all.length ? (
             <button key={`m:${g}:${i}`} type="button" onClick={() => setExpanded((x) => new Set([...x, `${g}\0${i}`]))} className="ml-[26px] flex h-6 items-center text-[11px] text-ac-muted hover:text-ac-text">
               {all.length - wtRows.length} more ›
@@ -930,7 +955,7 @@ export function SessionsZone({
           </div>
         )}
       </div>
-      {byStatus && doneRows.length > 0 && (
+      {pinned && byStatus && doneRows.length > 0 && (
         <div data-done-groups="" className="sticky bottom-0 z-[1] mt-auto border-t border-ac-line bg-ac-panel px-1.5 py-1">
           {/* Each row is one full-width button; Clean up lives in All sessions for now (owner, 2026-11-24). */}
           {doneRows.map((g) => (

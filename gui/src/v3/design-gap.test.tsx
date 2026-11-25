@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useLayoutEffect } from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { V3Window, type V3Data } from "./window.js";
+import { paneTab } from "./pane-tabs.test-helper.js";
 import { data, slots } from "./window-fixture.js";
 
 afterEach(cleanup);
@@ -184,6 +185,8 @@ describe("Sessions window header (spec §5)", () => {
     expect(within(view()).getAllByRole("menuitem").map((b) => b.textContent)).toEqual(["Select", "DensityComfortable", "Show pinned only"]);
     fireEvent.click(screen.getByLabelText("Select · density · show pinned"));
     const win = screen.getByLabelText("Sessions window");
+    // Sort and group sit on the All tab's head (owner, 2026-11-25).
+    paneTab("All");
     fireEvent.click(within(win).getByTitle("Sort and group"));
     fireEvent.click(within(screen.getByRole("menu", { name: "Sort and group" })).getByText("Project / folder"));
     expect(within(win).getByTitle("Sort and group").textContent).toBe("Project · Status");
