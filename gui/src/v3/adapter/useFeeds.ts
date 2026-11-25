@@ -30,6 +30,10 @@ export interface V3Feeds {
   activity: ipc.ActivityEntry[] | null;
   /** Feed name → epoch ms of its last good read. */
   readAt: Partial<Record<FeedName, number>>;
+  /** Stopped-engine readings in a row since it was last seen running, and
+   *  when the first of them was read. */
+  engineMisses?: number;
+  engineMissSince?: number;
 }
 
 export type FeedName = "needs" | "engine" | "host" | "library" | "openTargets" | "agents" | "remote" | "terminalSync" | "codexRows" | "activity";
@@ -71,10 +75,39 @@ export async function pollFeeds(prev: V3Feeds, deps: FeedDeps, slow: boolean, no
   results.forEach((r, i) => {
     if (r.status !== "fulfilled") return;
     const n = names[i];
+    if (n === "engine" && holdEngine(next, r.value as EngineHealth, now)) return;
     (next as unknown as Record<FeedName, unknown>)[n] = r.value;
-    next.readAt[n] = now;
+    next.readAt[n] = n === "engine" && next.engineMisses ? (next.engineMissSince ?? now) : now;
   });
   return next;
+}
+
+/** One stopped reading after a running one is held back from the banner: a
+ *  busy engine loop or a restart is gone by the next round, a stopped engine is
+ *  still stopped. A service of another install is never held, and a miss older
+ *  than a few rounds starts the hold over rather than dating a new stop. */
+const ENGINE_MISSES_SHOWN = 2;
+const ENGINE_MISS_STALE_MS = 3 * FEEDS_POLL_MS;
+
+function holdEngine(next: V3Feeds, read: EngineHealth, now: number): boolean {
+  if (read.running) {
+    next.engineMisses = 0;
+    next.engineMissSince = undefined;
+    return false;
+  }
+  if (next.engineMissSince !== undefined && now - next.engineMissSince > ENGINE_MISS_STALE_MS && next.engine?.running) {
+    next.engineMisses = 0;
+    next.engineMissSince = undefined;
+  }
+  next.engineMisses = (next.engineMisses ?? 0) + 1;
+  next.engineMissSince ??= now;
+  return next.engine?.running === true && !read.elsewhere && next.engineMisses < ENGINE_MISSES_SHOWN;
+}
+
+/** Whether the last engine reading failed, held from the banner or not: a
+ *  caller that would hand work to the service must not rely on it. */
+export function engineSuspect(f: V3Feeds): boolean {
+  return (f.engineMisses ?? 0) > 0 || f.engine?.running === false;
 }
 
 /** Poll the v3 feeds; a hidden window polls every other tick. `refresh()` runs

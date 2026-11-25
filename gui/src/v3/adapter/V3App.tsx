@@ -34,7 +34,7 @@ import { canTakeOver, chatStart, hasOpenPr, initialPlan, nextTurnReached, NO_TER
 import { SessionBody, SubagentTranscript, ToolsSlot, settingsSection } from "./slots.js";
 import { BoardPage } from "../board/BoardPage.js";
 import type { SessionRow } from "../../transforms.js";
-import { useV3Feeds } from "./useFeeds.js";
+import { engineSuspect, useV3Feeds } from "./useFeeds.js";
 import { useChats } from "./chats.js";
 import { ReviewHost } from "./ReviewHost.js";
 import { McpHost } from "./McpHost.js";
@@ -321,7 +321,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     needs: () => feeds.needs?.items ?? [],
     requests: () => s.switchRequests,
     executor: () => ipc.getLinkExecutor(),
-    serviceDown: () => data.health.state === "down",
+    serviceDown: () => data.health.state === "down" || engineSuspect(feeds),
     hosted: (k) => hostedKeys.has(k),
     setAppearance: (a) => (saveAppearance(a), setAppearanceState(a)),
     setFocusTerminal: (on) => (setFocusTerminalFlag(on), setFocusTerminalState(on)),

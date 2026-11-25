@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { emptyFeeds, pollFeeds, useV3Feeds, type FeedDeps } from "./useFeeds.js";
+import { emptyFeeds, engineSuspect, pollFeeds, useV3Feeds, type FeedDeps } from "./useFeeds.js";
 
 const ok = <T,>(v: T) => vi.fn(async () => v);
 const fail = () => vi.fn(async () => { throw new Error("cli down"); });
@@ -44,6 +44,53 @@ describe("pollFeeds", () => {
     expect(second.readAt.engine).toBe(1);
     expect(second.readAt.needs).toBe(2);
     expect(second.host).toEqual(first.host);
+  });
+
+  it("one stopped reading after a running one is held; the second in a row shows", async () => {
+    const down = ok({ running: false, reason: "no answer from the engine within 800 ms", hostedRunning: 1 });
+    const up = await pollFeeds(emptyFeeds(), deps(), false, 1);
+    const once = await pollFeeds(up, deps({ engine: down }), false, 2);
+    expect(once.engine?.running).toBe(true);
+    expect(once.readAt.engine).toBe(1);
+    const twice = await pollFeeds(once, deps({ engine: down }), false, 3);
+    expect(twice.engine?.running).toBe(false);
+    expect(twice.readAt.engine).toBe(2);
+    const back = await pollFeeds(twice, deps(), false, 4);
+    expect(back.engine?.running).toBe(true);
+    const blipAgain = await pollFeeds(back, deps({ engine: down }), false, 5);
+    expect(blipAgain.engine?.running).toBe(true);
+  });
+
+  it("a held miss still counts: whoever must not rely on the service sees it at once", async () => {
+    const down = ok({ running: false, reason: "engine not reachable", hostedRunning: 0 });
+    const up = await pollFeeds(emptyFeeds(), deps(), false, 1);
+    expect(engineSuspect(up)).toBe(false);
+    const once = await pollFeeds(up, deps({ engine: down }), false, 2);
+    expect(once.engine?.running).toBe(true);
+    expect(engineSuspect(once)).toBe(true);
+  });
+
+  it("a service of another install is never held: a restart cannot fix it", async () => {
+    const elsewhere = ok({ running: false, reason: "another install", hostedRunning: 0, elsewhere: true as const });
+    const up = await pollFeeds(emptyFeeds(), deps(), false, 1);
+    expect((await pollFeeds(up, deps({ engine: elsewhere }), false, 2)).engine?.running).toBe(false);
+  });
+
+  it("a miss long ago does not date a new stop: the hold starts over", async () => {
+    const down = ok({ running: false, reason: "engine not reachable", hostedRunning: 0 });
+    const up = await pollFeeds(emptyFeeds(), deps(), false, 1);
+    const once = await pollFeeds(up, deps({ engine: down }), false, 2);
+    const hourLater = await pollFeeds(once, deps({ engine: down }), false, 2 + 3_600_000);
+    expect(hourLater.engine?.running).toBe(true);
+    const next = await pollFeeds(hourLater, deps({ engine: down }), false, 2 + 3_610_000);
+    expect(next.engine?.running).toBe(false);
+    expect(next.readAt.engine).toBe(2 + 3_600_000);
+  });
+
+  it("a stopped engine on the very first read shows at once", async () => {
+    const down = ok({ running: false, reason: "engine not reachable", hostedRunning: 0 });
+    const f = await pollFeeds(emptyFeeds(), deps({ engine: down }), false, 1);
+    expect(f.engine?.running).toBe(false);
   });
 
   it("everything failing on the first read leaves the empty state", async () => {
