@@ -16,6 +16,7 @@ import { childNoun, subagentLabel, type ChildModel, type ChildSource, type Child
 import type { OpenTarget } from "../settings.js";
 import type { Appearance } from "../themes/resolve.js";
 import { SESSION_MENU, type SessionMenuItem, type V3Data } from "../window.js";
+import { THINKING_LEVELS } from "../workbench.js";
 import type { BarSession, ModelChoices } from "../workbench.js";
 import { modelLabel } from "../model-label.js";
 import { shortAge } from "../../ui/format.js";
@@ -61,11 +62,7 @@ export interface AdapterEnv {
   home?: string | null;
 }
 
-export const THINKING_LEVELS: NewSessionFacts["thinkingLevels"] = {
-  claude: ["low", "medium", "high", "xhigh", "max"],
-  codex: ["minimal", "low", "medium", "high"],
-  antigravity: [],
-};
+export { THINKING_LEVELS };
 
 const WEEK_MS = 7 * 86_400_000;
 
