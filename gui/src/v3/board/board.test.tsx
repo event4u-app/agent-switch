@@ -195,6 +195,8 @@ describe("BoardPage", () => {
     expect(pickTab(tabs, "workflow:wf_1")).toBe("workflows");
     expect(pickTab(tabs, "arena:demo")).toBe("arena:demo");
     expect(pickTab(tabs, "arena:gone")).toBe("council:live");
+    expect(pickTab(tabs, "council")).toBe("council:live");
+    expect(pickTab(boardTabs(orch()), "council")?.startsWith("council:")).toBe(true);
   });
 
   it("reads the board, draws the focused tab, and opens an agent's transcript beside it", async () => {
@@ -308,5 +310,21 @@ describe("live council table", () => {
     fireEvent.click(screen.getByRole("button", { name: /Say it/ }));
     await waitFor(() => expect(screen.getByText(/no longer listens/)).toBeTruthy());
     expect((screen.getByLabelText(/Say something to the table/) as HTMLTextAreaElement).value).toBe("late");
+  });
+});
+
+describe("splitTabs", () => {
+  it("keeps running tabs and the chosen one in the strip; the rest are finished", async () => {
+    const { splitTabs } = await import("./BoardPage.js");
+    const tabs = [
+      { id: "arena:a" as const, live: true },
+      { id: "council:b" as const, live: false },
+      { id: "council:c" as const, live: false },
+      { id: "workflows" as const, live: false },
+    ];
+    const s = splitTabs(tabs, "council:c");
+    expect(s.shown.map((t) => t.id)).toEqual(["arena:a", "council:c"]);
+    expect(s.finished.map((t) => t.id)).toEqual(["council:b", "workflows"]);
+    expect(splitTabs(tabs, null).finished).toHaveLength(3);
   });
 });

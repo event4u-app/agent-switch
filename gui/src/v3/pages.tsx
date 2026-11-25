@@ -30,7 +30,7 @@ export function PageBody({ eyebrow, title, sub, actions, children }: { eyebrow?:
 }
 
 /** A table as a 10 px card with muted column heads (spec §6.7). */
-function Table({ cols, heads, children }: { cols: string; heads: ReactNode[]; children: ReactNode }) {
+export function Table({ cols, heads, children }: { cols: string; heads: ReactNode[]; children: ReactNode }) {
   return (
     <div className="overflow-hidden rounded-[10px] border border-ac-line bg-ac-panel">
       <div className={cn("grid items-center gap-3 border-b border-ac-line px-3 py-2 text-[11px] font-medium text-ac-muted", cols)}>
@@ -46,7 +46,7 @@ function Table({ cols, heads, children }: { cols: string; heads: ReactNode[]; ch
 }
 
 /** `width` fixes it; without one it takes the room the switches leave, so a filter bar stays one line. */
-function Filter({ value, onChange, placeholder, width }: { value: string; onChange: (v: string) => void; placeholder: string; width?: number }) {
+export function Filter({ value, onChange, placeholder, width }: { value: string; onChange: (v: string) => void; placeholder: string; width?: number }) {
   return (
     <div className={cn("relative", width === undefined && "min-w-[120px] flex-1")} style={width === undefined ? undefined : { width }}>
       <Search className="absolute left-2.5 top-2 size-4 text-ac-faint" />
@@ -55,7 +55,7 @@ function Filter({ value, onChange, placeholder, width }: { value: string; onChan
   );
 }
 
-const matches = (q: string, ...fields: (string | null | undefined)[]) => {
+export const matches = (q: string, ...fields: (string | null | undefined)[]) => {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   const hay = fields.filter(Boolean).join(" ").toLowerCase();
   return words.every((w) => hay.includes(w));

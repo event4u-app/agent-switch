@@ -17,7 +17,7 @@ import { ChatTimeline } from "../chat.js";
 import { Composer } from "../composer.js";
 import { EarlierNotShown } from "../subagent-view.js";
 import { BoardPage } from "../board/BoardPage.js";
-import { BOARD_FIXTURE } from "./board-fixture.js";
+import { BOARD_FIXTURE, BOARD_WON } from "./board-fixture.js";
 import type { AsEvent } from "../timeline.js";
 import CHAT from "../fixtures/timeline-claude-2.1.316.json";
 import { ToolsPage, allNeeds } from "../tools.js";
@@ -84,6 +84,7 @@ const SESSIONS: RowSession[] = [
       { id: "k1", label: "Council seat · architect", kind: "council-seat", state: "done", source: "lineage" },
       { id: "k2", label: "Council seat · skeptic", kind: "council-seat", state: "working", source: "lineage" },
       { id: "k3", label: "Council seat · release manager", kind: "council-seat", state: "working", source: "lineage" },
+      { id: "board:claude/work/s-council|council", label: "Council · live", kind: "council-board", state: "working", source: "files" },
     ] }),
   S({ key: "claude/work/s-arena", title: "Signing arena: stable TCC identity", state: "working", branch: "dev/v3",
     children: [
@@ -95,8 +96,10 @@ const SESSIONS: RowSession[] = [
         ] },
       { id: "board:claude/work/s-arena|council", label: "Council", kind: "council-board", state: "done", source: "files" },
     ] }),
-  S({ key: "claude/side/s-wedge", title: "Fix wedge on daemon restart", state: "working", account: { name: "side", nearLimit: true }, branch: "fix/wedge-restart", pr: { number: 88, ci: "SUCCESS", mergeable: "MERGEABLE" } }),
-  S({ key: "claude/personal/s-notes", title: "Release notes 2.11", state: "done", account: { name: "personal", nearLimit: false }, branch: "docs/release-2.11", pr: { number: 140, ci: "SUCCESS", mergeable: "MERGEABLE" }, doneToday: true }),
+  S({ key: "claude/side/s-wedge", title: "Fix wedge on daemon restart", state: "working", account: { name: "side", nearLimit: true }, branch: "fix/wedge-restart", pr: { number: 88, ci: "SUCCESS", mergeable: "MERGEABLE" },
+    children: [{ id: "board:claude/side/s-wedge|workflow:wf_panel_wedge", label: "panel-decide · 2/4 · Lenses", kind: "workflow", state: "working", source: "files" }] }),
+  S({ key: "claude/personal/s-notes", title: "Release notes 2.11", state: "done", account: { name: "personal", nearLimit: false }, branch: "docs/release-2.11", pr: { number: 140, ci: "SUCCESS", mergeable: "MERGEABLE" }, doneToday: true,
+    children: [{ id: "board:claude/personal/s-notes|workflow:wf_panel_notes", label: "panel-review · 25/25", kind: "workflow", state: "done", source: "files" }] }),
   S({ key: "claude/personal/s-checkout", title: "Checkout flow accessibility", state: "needs-you", account: { name: "personal", nearLimit: false }, branch: "a11y/checkout", pr: { number: 311, ci: "FAILURE", mergeable: "CONFLICTING" }, needsYou: true,
     children: [{ id: "u1", label: "claude --print in /tmp/tmp.k2J9", kind: "unknown", state: "done", source: "unknown" }] }),
   // Ended yesterday: the status grouping's "Older" group.
@@ -342,10 +345,12 @@ export interface SceneOptions {
   platform?: "mac" | "other";
   /** The window's remembered view (density, order, grouping), so a board names its state instead of toggling the default. */
   layout?: Partial<WindowLayout>;
+  /** The orchestration boards read: the running fixture, or the same arena won. */
+  board?: "live" | "won";
 }
 
 /** One board: the real v3 window, or one of the screens that live outside it, on fixture data. */
-export function Scene({ view = "main", theme = "darcula", accent = "theme", health, away, chat, platform, layout }: SceneOptions) {
+export function Scene({ view = "main", theme = "darcula", accent = "theme", health, away, chat, platform, layout, board }: SceneOptions) {
   // The Terminal / Chat switch is live: the window asks for a view, the fixture keeps it per session.
   const [views, setViews] = useState<Record<string, "terminal" | "chat">>({});
   const inChat = (key: string) => (views[key] ?? (chat ? "chat" : "terminal")) === "chat";
@@ -356,7 +361,7 @@ export function Scene({ view = "main", theme = "darcula", accent = "theme", heal
   const slots: V3Slots = {
     // A subagent's own transcript, never its parent's; the end of a long run, as the real view reads it.
     subagent: (_parent, agentId) => <ChatTimeline events={SUBAGENT_RUNS[agentId] ?? []} notice={<EarlierNotShown />} />,
-    board: (key, focus) => <BoardPage sessionKey={key} title={SESSIONS.find((x) => x.key === key)?.title ?? key} live focus={focus} read={async () => BOARD_FIXTURE} readLine={async (_k, run, id) => `# ${id}\n\n${run}: the line's rationale, then its diff.\n\n\`\`\`diff\n+ export function signBundle(app: string): SignResult {\n\`\`\`\n`} transcript={(agentId) => <ChatTimeline events={SUBAGENT_RUNS[agentId] ?? SUBAGENT_RUNS.c2} notice={<EarlierNotShown />} />} speak={async () => undefined} />,
+    board: (key, focus) => <BoardPage sessionKey={key} title={SESSIONS.find((x) => x.key === key)?.title ?? key} live focus={focus} read={async () => (board === "won" ? BOARD_WON : BOARD_FIXTURE)} readLine={async (_k, run, id) => `# ${id}\n\n${run}: the line's rationale, then its diff.\n\n\`\`\`diff\n+ export function signBundle(app: string): SignResult {\n\`\`\`\n`} transcript={(agentId) => <ChatTimeline events={SUBAGENT_RUNS[agentId] ?? SUBAGENT_RUNS.c2} notice={<EarlierNotShown />} />} speak={async () => undefined} />,
     review: (key, focus) => (
       <Review
         title={SESSIONS.find((x) => x.key === key)?.title ?? key}

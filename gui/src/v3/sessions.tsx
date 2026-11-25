@@ -7,11 +7,11 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Bot, ChevronDown, ChevronRight, Folder, SquareTerminal, Swords, Users, Workflow as WorkflowIcon } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, Folder, Gavel, SquareTerminal, Swords, Users, Workflow as WorkflowIcon } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { SessionStateIcon, type StateSource } from "../ui/SessionStateIcon.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
-import { AccountMark, BatchBar, CheckMark, Chip, Marker, ago, duration, type BatchActions } from "./kit.js";
+import { AccountMark, BatchBar, CheckMark, Chip, Marker, ago, duration, inShell, type BatchActions } from "./kit.js";
 import { AppMono } from "./menus.js";
 import { useEngaged, useHeldOrder } from "./held-order.js";
 
@@ -202,6 +202,7 @@ export function attention(s: RowSession): { text: string; tone: AttentionTone }[
 /** The children count's glyph: swords when an arena runs under the row, the workflow mark for runs only, else the subagent bot. */
 function ChildrenIcon({ kids }: { kids: readonly ChildModel[] }) {
   if (kids.some((k) => k.kind === "arena-board")) return <Swords className="size-3.5" />;
+  if (kids.length && kids.every((k) => k.kind === "workflow" && /panel/i.test(k.label))) return <Gavel className="size-3.5" />;
   if (kids.length && kids.every((k) => BOARD_KINDS.has(k.kind))) return <WorkflowIcon className="size-3.5" />;
   return <Bot className="size-3.5" />;
 }
@@ -291,7 +292,7 @@ function ChildCells({ c }: { c: ChildModel }) {
       <SessionStateIcon state={c.state} source={c.stateSource} quiet={!!c.quiet} />
       {BOARD_KINDS.has(c.kind) ? (
         <span className={cn("inline-flex size-4 shrink-0 items-center justify-center", c.kind === "arena-board" ? "text-ac-brand-text" : c.kind === "council-board" ? "text-ac-violet-text" : "text-ac-muted")}>
-          {c.kind === "arena-board" ? <Swords className="size-3.5" aria-label="arena" /> : c.kind === "council-board" ? <Users className="size-3.5" aria-label="council" /> : <WorkflowIcon className="size-3.5" aria-label="workflow" />}
+          {c.kind === "arena-board" ? <Swords className="size-3.5" aria-label="arena" /> : c.kind === "council-board" ? <Users className="size-3.5" aria-label="council" /> : /panel/i.test(c.label) ? <Gavel className="size-3.5" aria-label="panel" /> : <WorkflowIcon className="size-3.5" aria-label="workflow" />}
         </span>
       ) : c.kind === "subagent" || !c.tool ? (
         <span className="inline-flex size-4 shrink-0 items-center justify-center text-ac-muted">
@@ -471,8 +472,7 @@ function ChildRow({ c, parent, depth, rails, last, onSelect, onSubagent, onBoard
       onMouseEnter={
         onPeek &&
         ((e) => {
-          const shell = e.currentTarget.closest("[data-v3-shell]");
-          onPeek(c.id, Math.round(e.currentTarget.getBoundingClientRect().top - (shell?.getBoundingClientRect().top ?? 0)));
+          onPeek(c.id, Math.round(inShell(e.currentTarget).top));
         })
       }
       onMouseLeave={onPeek && (() => onPeek(null, 0))}
@@ -632,8 +632,7 @@ export function SessionRow({
         onMouseEnter={
           onPeek &&
           ((e) => {
-            const shell = e.currentTarget.closest("[data-v3-shell]");
-            onPeek(s.key, Math.round(e.currentTarget.getBoundingClientRect().top - (shell?.getBoundingClientRect().top ?? 0)));
+            onPeek(s.key, Math.round(inShell(e.currentTarget).top));
           })
         }
         onMouseLeave={onPeek && (() => onPeek(null, 0))}
@@ -845,8 +844,7 @@ export function SessionsZone({
             aria-haspopup="menu"
             aria-expanded={!!viewOpen}
             onClick={(e) => {
-              const shell = e.currentTarget.closest("[data-v3-shell]");
-              onView(Math.round(e.currentTarget.getBoundingClientRect().top - (shell?.getBoundingClientRect().top ?? 0)));
+              onView(Math.round(inShell(e.currentTarget).top));
             }}
             title="Sort and group"
             className={cn("-mr-1.5 ml-auto inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-ac-muted hover:bg-ac-raise hover:text-ac-text", viewOpen && "bg-ac-raise text-ac-text")}

@@ -257,3 +257,18 @@ export function CheckBox({ checked, onChange, label, size = 16, children }: { ch
     </label>
   );
 }
+
+/**
+ * An element's box in its window shell's own pixels. A zoomed view (the design
+ * canvas, browser zoom on a transformed parent) scales what the screen measures,
+ * but the shell places its layers in unscaled pixels: without this a layer
+ * lands too far up and left wherever the window is drawn smaller. Pure on the DOM.
+ */
+export function inShell(el: Element): { top: number; left: number; bottom: number; right: number; width: number } {
+  const shell = el.closest("[data-v3-shell]") as HTMLElement | null;
+  const r = el.getBoundingClientRect();
+  const box = shell?.getBoundingClientRect();
+  if (!shell || !box) return { top: r.top, left: r.left, bottom: r.bottom, right: r.right, width: r.width };
+  const k = shell.offsetWidth ? box.width / shell.offsetWidth || 1 : 1;
+  return { top: (r.top - box.top) / k, left: (r.left - box.left) / k, bottom: (r.bottom - box.top) / k, right: (r.right - box.left) / k, width: shell.offsetWidth || box.width };
+}

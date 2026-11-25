@@ -91,7 +91,8 @@ export function ArenaBoard({ view, onAgent, readLine }: ArenaBoardProps) {
 
         <section aria-label="Rounds" className="mt-7">
           <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ac-muted">Rounds</h3>
-          <div className="flex gap-3 overflow-x-auto pb-2">
+          {/* Room on every side: the ring around a picked match (a 1.5px shadow) is not cut by the scroll box. */}
+          <div className="-mx-2 flex gap-3 overflow-x-auto px-2 pb-2 pt-0.5">
             {model.rounds.map((r) => (
               <div key={r.round} className="w-[232px] shrink-0">
                 <div className={cn("mb-2 flex items-center gap-1.5 text-[11.5px] font-medium", r.current ? "text-ac-brand-text" : "text-ac-soft")}>

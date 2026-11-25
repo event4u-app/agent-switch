@@ -64,8 +64,12 @@ export function Anchored({ className, style, onClose, children }: { className?: 
     const box = el?.offsetParent?.getBoundingClientRect();
     if (!el || !box || !box.width) return;
     const r = el.getBoundingClientRect();
-    const x = r.right > box.right - 4 ? box.right - 4 - r.right : r.left < box.left + 4 ? box.left + 4 - r.left : 0;
-    const y = r.bottom > box.bottom - 4 ? Math.max(box.top + 4 - r.top, box.bottom - 4 - r.bottom) : 0;
+    // Screen pixels to the parent's own (a zoomed view scales one, not the other).
+    const parent = el.offsetParent as HTMLElement;
+    const k = parent.offsetWidth ? box.width / parent.offsetWidth || 1 : 1;
+    // Only a layer that is cut off moves (then 4 px in); a sheet placed flush on an edge stays flush.
+    const x = (r.right > box.right + 0.5 ? box.right - 4 - r.right : r.left < box.left - 0.5 ? box.left + 4 - r.left : 0) / k;
+    const y = (r.bottom > box.bottom + 0.5 ? Math.max(box.top + 4 - r.top, box.bottom - 4 - r.bottom) : 0) / k;
     setShift((o) => (o.x === x && o.y === y ? o : { x, y }));
   }, [style?.top, style?.left, style?.right]);
   const key = (e: KeyboardEvent) => {

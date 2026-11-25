@@ -46,6 +46,8 @@ export const BOARDS: Record<string, Board> = {
   subagent: { steps: [{ click: "Show 3 subagents" }, { click: "general-purpose · migrate JSON stores" }] },
   // The board of a session that runs an arena: the tournament, its council, its workflow runs.
   arena: { steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }] },
+  // The same arena won: the champion's card and the header shine.
+  "arena-win": { scene: { board: "won" }, steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }] },
   "arena-match": { steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }, { click: "R3M1" }] },
   "arena-line": { steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }, { click: "L005" }] },
   council: { steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }, { click: "Council · 20261124T1300Z-tcc" }] },
@@ -64,6 +66,10 @@ export const BOARDS: Record<string, Board> = {
   // The resume preflight lives outside V3Window (act → app); this board shows where it starts.
   resume: { steps: [{ click: "Library" }] },
   tools: { steps: [{ click: "Tools" }] },
+  // The bottom of the left stripe: what runs across sessions, by kind.
+  arenas: { steps: [{ click: "Arenas" }] },
+  councils: { steps: [{ click: "Councils" }] },
+  panels: { steps: [{ click: "Panels" }] },
   tray: { scene: { view: "tray" } },
   "tray-codex": { scene: { view: "tray-codex" }, steps: [{ click: "Codex" }] },
   appearance: { steps: [...SETTINGS, { click: "Appearance" }] },

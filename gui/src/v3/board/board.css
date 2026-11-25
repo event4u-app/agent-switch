@@ -95,19 +95,30 @@
   }
 }
 
-/* The champion: a moving shine over the warm token. */
+/* The champion: a band of light that sweeps the whole card, edge to edge, then rests (owner, 2026-11-25:
+   the old background-position sweep crossed the card in a fraction of the loop and looked cut off). */
 .ab-champion {
-  background-image: linear-gradient(110deg, transparent 30%, color-mix(in srgb, var(--ac-warn) 28%, transparent) 45%, transparent 60%);
-  background-size: 250% 100%;
+  isolation: isolate;
+  overflow: hidden;
   box-shadow: 0 0 0 1.5px var(--ac-warn), 0 0 22px 2px color-mix(in srgb, var(--ac-warn) 30%, transparent);
-  animation: ab-shine 3s ease-in-out infinite;
+}
+.ab-champion::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 0%, transparent 35%, color-mix(in srgb, var(--ac-warn) 30%, transparent) 50%, transparent 65%, transparent 100%);
+  transform: translateX(-100%);
+  animation: ab-shine 3.6s ease-in-out infinite;
 }
 @keyframes ab-shine {
-  from {
-    background-position: 150% 0;
+  0% {
+    transform: translateX(-100%);
   }
-  to {
-    background-position: -100% 0;
+  60%,
+  100% {
+    transform: translateX(100%);
   }
 }
 
@@ -218,7 +229,7 @@
   .ab-ring::before,
   .ab-alive,
   .ab-knockout,
-  .ab-champion,
+  .ab-champion::after,
   .ab-flash,
   .ab-bar,
   .ab-enter,

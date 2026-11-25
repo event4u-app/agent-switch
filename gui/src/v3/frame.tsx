@@ -8,7 +8,8 @@
  */
 
 import { useCallback, useState, type ReactNode } from "react";
-import { Bell, FileDiff, History, Inbox, Layers, Library, ListTree, Network, PanelLeft, Plus, Search, Settings, TriangleAlert, Wrench } from "lucide-react";
+import { Bell, FileDiff, History, Inbox, Layers, Library, ListTree, Network, PanelLeft, Plus, Search, Settings, Swords, TriangleAlert, Users, Gavel, Wrench } from "lucide-react";
+import type { RunKind } from "./runs.js";
 import { cn } from "../lib/utils.js";
 import { AppLogo } from "../ui/AppLogo.js";
 import { Button, IconButton } from "../ui/Button.js";
@@ -106,44 +107,60 @@ export interface StripeItem {
   icon: ReactNode;
   /** Amber corner dot: something in there needs you while it is hidden. */
   dot?: boolean;
+  /** Accent count in the top-right corner: how many of these run now (0: none shown). */
+  badge?: number;
+  /** Sits in the group pinned to the stripe's bottom. */
+  bottom?: boolean;
 }
 
-export function Stripe({ side, items, active, why, onSelect }: { side: "left" | "right"; items: StripeItem[]; active?: string | null; /** Why no button can act here (a page tab has no session); absent: they can. */ why?: string | null; onSelect: (id: string) => void }) {
+export function Stripe({ side, items, active, why, onSelect }: { side: "left" | "right"; items: StripeItem[]; active?: string | readonly string[] | null; /** Why no button can act here (a page tab has no session); absent: they can. */ why?: string | null; onSelect: (id: string) => void }) {
+  const button = (it: StripeItem) => {
+    const on = !why && (Array.isArray(active) ? active.includes(it.id) : it.id === active);
+    const label = it.badge ? `${it.label.trim()} · ${it.badge} running` : it.label;
+    return (
+      <button
+        key={it.id}
+        type="button"
+        title={why ? `${it.label.trim()} · ${why}` : label}
+        aria-label={label}
+        aria-pressed={on}
+        aria-disabled={why ? true : undefined}
+        onClick={why ? undefined : () => onSelect(it.id)}
+        className={cn("relative inline-flex size-9 items-center justify-center rounded-md [&_svg]:size-[18px]", on ? "bg-ac-raise text-ac-text" : why ? "cursor-not-allowed text-ac-muted opacity-50" : "text-ac-muted hover:bg-ac-raise hover:text-ac-text")}
+      >
+        {on && <Marker />}
+        {it.icon}
+        {it.dot && <span aria-hidden className="absolute right-1 top-1 size-2 rounded-full bg-ac-warn" />}
+        {!!it.badge && (
+          <span aria-hidden data-stripe-badge="" className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-ac-brand px-1 text-center text-[10px] font-semibold leading-4 tabular-nums text-ac-on-color">
+            {it.badge > 9 ? "9+" : it.badge}
+          </span>
+        )}
+      </button>
+    );
+  };
   return (
     <nav
       aria-label={side === "left" ? "Tool windows" : "Session panels"}
       className={cn("flex w-11 shrink-0 flex-col items-center gap-1 bg-ac-rail py-2", side === "left" ? "border-r border-ac-line" : "border-l border-ac-line")}
     >
-      {items.map((it) => {
-        const on = !why && it.id === active;
-        return (
-          <button
-            key={it.id}
-            type="button"
-            title={why ? `${it.label.trim()} · ${why}` : it.label}
-            aria-label={it.label}
-            aria-pressed={on}
-            aria-disabled={why ? true : undefined}
-            onClick={why ? undefined : () => onSelect(it.id)}
-            className={cn("relative inline-flex size-9 items-center justify-center rounded-md [&_svg]:size-[18px]", on ? "bg-ac-raise text-ac-text" : why ? "cursor-not-allowed text-ac-muted opacity-50" : "text-ac-muted hover:bg-ac-raise hover:text-ac-text")}
-          >
-            {on && <Marker />}
-            {it.icon}
-            {it.dot && <span aria-hidden className="absolute right-1 top-1 size-2 rounded-full bg-ac-warn" />}
-          </button>
-        );
-      })}
+      {items.filter((it) => !it.bottom).map(button)}
+      {items.some((it) => it.bottom) && <div className="mt-auto flex flex-col items-center gap-1">{items.filter((it) => it.bottom).map(button)}</div>}
     </nav>
   );
 }
 
 /** Left stripe: Sessions is the tool window; the rest open as page tabs. */
-export function leftItems(needsYouHidden: boolean): StripeItem[] {
+export function leftItems(needsYouHidden: boolean, running: Record<RunKind, number> = { arena: 0, council: 0, panel: 0 }): StripeItem[] {
   return [
     { id: "sessions", label: "Sessions  ⌘B", icon: <ListTree />, dot: needsYouHidden },
     { id: "library", label: "Library", icon: <Library /> },
     { id: "accounts", label: "Accounts", icon: <Layers /> },
     { id: "tools", label: "Tools", icon: <Wrench /> },
+    // Bottom (owner, 2026-11-25): what runs across sessions, each with its running count.
+    { id: "arenas", label: "Arenas", icon: <Swords />, badge: running.arena, bottom: true },
+    { id: "councils", label: "Councils", icon: <Users />, badge: running.council, bottom: true },
+    { id: "panels", label: "Panels", icon: <Gavel />, badge: running.panel, bottom: true },
   ];
 }
 
@@ -156,7 +173,7 @@ export function rightItems(blocker: boolean): StripeItem[] {
 }
 
 export type RightWindow = "summary" | "changes" | "children";
-export type PageId = "library" | "accounts" | "tools" | "settings";
+export type PageId = "library" | "accounts" | "tools" | "settings" | "arenas" | "councils" | "panels";
 
 /**
  * Which tool windows are open. The Sessions window shows by default; clicking
@@ -192,6 +209,8 @@ export function Shell({
   overlay,
   actions,
   historyOpen,
+  running,
+  activePage,
 }: {
   frame: ReturnType<typeof useFrame>;
   health: "ready" | "down";
@@ -209,12 +228,16 @@ export function Shell({
   overlay?: ReactNode;
   actions: { onSearch: () => void; onStart: () => void; onSettings: () => void; onInbox: () => void; onRestart: () => void; onHistory?: () => void };
   historyOpen?: boolean;
+  /** Arenas, councils, panels running now: the bottom stripe badges. */
+  running?: Record<RunKind, number>;
+  /** The page tab in front, so its stripe button reads as pressed. */
+  activePage?: string | null;
 }) {
   return (
     <div data-v3-shell className="relative flex h-full min-h-0 flex-col bg-ac-bg">
       <TitleBar health={health} inbox={frame.sessionsShown ? null : inbox} inboxOpen={inboxOpen} notifications={inbox.count} historyOpen={historyOpen} {...actions} />
       <div className="flex min-h-0 flex-1">
-        <Stripe side="left" items={leftItems(!frame.sessionsShown && needsYou)} active={frame.sessionsShown ? "sessions" : null} onSelect={frame.selectLeft} />
+        <Stripe side="left" items={leftItems(!frame.sessionsShown && needsYou, running)} active={[...(frame.sessionsShown ? ["sessions"] : []), ...(activePage && ["arenas", "councils", "panels"].includes(activePage) ? [activePage] : [])]} onSelect={frame.selectLeft} />
         {frame.sessionsShown && sessionsWindow}
         {centre}
         {frame.right && !rightWhy && rightWindow}
