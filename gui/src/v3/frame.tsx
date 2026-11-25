@@ -157,9 +157,9 @@ export function leftItems(needsYouHidden: boolean, running: Record<RunKind, numb
     { id: "library", label: "Library", icon: <Library /> },
     { id: "accounts", label: "Accounts", icon: <Layers /> },
     { id: "tools", label: "Tools", icon: <Wrench /> },
-    // Bottom (owner, 2026-11-25): what runs across sessions, each with its running count.
-    { id: "arenas", label: "Arenas", icon: <Swords />, badge: running.arena, bottom: true },
+    // Bottom (owner, 2026-11-25): what runs across sessions, each with its running count — Councils, Arenas, Panels.
     { id: "councils", label: "Councils", icon: <Users />, badge: running.council, bottom: true },
+    { id: "arenas", label: "Arenas", icon: <Swords />, badge: running.arena, bottom: true },
     { id: "panels", label: "Panels", icon: <Gavel />, badge: running.panel, bottom: true },
   ];
 }

@@ -1,5 +1,5 @@
 /**
- * Arenas, Councils, Panels (owner, 2026-11-25): three buttons at the bottom of
+ * Councils, Arenas, Panels (owner, 2026-11-25): three buttons at the bottom of
  * the left stripe, each with an accent badge counting what runs now. Each opens
  * a page listing that kind of run across every session; a row opens the
  * session's board right at that run.
