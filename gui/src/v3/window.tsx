@@ -39,7 +39,7 @@ import { AccountMark, Act, inShell, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding } from "./keys.js";
-import { EMPTY_TABS, canReopen, closable, closeOthers, closeTab, closeToRight, closeUnpinned, isPageTab, moveTab, nextActive, openTab, pinTab, reopenTab, seedTabs, unpinTab, type TabState } from "./tabs.js";
+import { EMPTY_TABS, canReopen, closable, closeOthers, closeTab, closeToRight, closeUnpinned, isPageTab, moveTab, nextActive, openAnother, openInDefault, openTab, pinTab, reopenTab, seedTabs, sessionOf, unpinTab, type TabState } from "./tabs.js";
 import { needSession, nextFocus, shownNeeds } from "./needs.js";
 import { canCopy, copyConversation } from "./copy-source.js";
 import { Switcher } from "./overlays.js";
@@ -254,7 +254,7 @@ export function V3Window({
   const pages = strip.order.filter(isPageTab).map((id) => id.slice(5) as Page);
   const sessionTabs = strip.order.filter((id) => !isPageTab(id));
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "history" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string; at?: Anchor; moved?: BarChipId[] } | { end: string } | { openin: string; at?: Anchor } | { tabMenu: string; x: number; y: number }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "history" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string; at?: Anchor; moved?: BarChipId[] } | { end: string } | { openin: string; at?: Anchor } | { tabMenu: string; x: number; y: number } | { rowMenu: string; x: number; y: number }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
@@ -285,7 +285,7 @@ export function V3Window({
   const [peek, setPeek] = useState<{ key: string; y: number } | null>(null);
   const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeRef = useRef<string | null>(null);
-  activeRef.current = active;
+  activeRef.current = active && sessionOf(active);
   const onPeek = (key: string | null, y: number) => {
     if (peekTimer.current) clearTimeout(peekTimer.current);
     // The active row already shows its facts in the workbench.
@@ -316,9 +316,17 @@ export function V3Window({
         openPage(`board:${m[1]}`);
       }
     : undefined;
+  // Everything opens in the default tab, the first unpinned session tab (owner, 2026-11-25);
+  // a session that already has a tab goes to it. A new tab is asked for: the right-click menus.
   const openSession = (key: string) => {
-    setStrip((cur) => openTab(cur, key));
-    setActive(key);
+    const r = openInDefault(strip, key);
+    setStrip(r.state);
+    setActive(r.id);
+  };
+  const openInNewTab = (key: string, after?: string) => {
+    const r = openAnother(strip, key, after);
+    setStrip(r.state);
+    setActive(r.id);
   };
   // 7.7: a subagent opens read-only in place of its parent's body, until Back or another session.
   const [subView, setSubView] = useState<{ parent: string; agentId: string } | null>(null);
@@ -330,7 +338,7 @@ export function V3Window({
     : undefined;
   // Another session, or the parent's tab closed: the subagent view ends.
   useEffect(() => {
-    if (subView && subView.parent !== active) setSubView(null);
+    if (subView && subView.parent !== (active && sessionOf(active))) setSubView(null);
   }, [active, subView]);
   // The window opens where the user left off, else on the first live session;
   // once, when the sessions are first known (they arrive after the first paint).
@@ -377,6 +385,7 @@ export function V3Window({
       pinnedTab
         ? { id: "unpin", label: "Unpin tab", icon: <PinOff />, onClick: run(() => setStrip((s) => unpinTab(s, id))) }
         : { id: "pin", label: "Pin tab", icon: <Pin />, onClick: run(() => setStrip((s) => pinTab(s, id))) },
+      ...(isPageTab(id) ? [] : [{ id: "duplicate", label: "Duplicate tab", icon: <Copy />, onClick: run(() => openInNewTab(sessionOf(id), id)) }]),
       { divider: true, label: "" },
       { id: "close", label: pinnedTab ? "Close pinned tab" : "Close tab", icon: <X />, onClick: run(() => changeStrip((s) => closeTab(s, id, true))) },
       { id: "close-others", label: "Close other tabs", disabled: !closable(strip, strip.order.filter((x) => x !== id)).length, onClick: run(() => changeStrip((s) => closeOthers(s, id))) },
@@ -386,7 +395,7 @@ export function V3Window({
       { id: "reopen", label: "Reopen closed tab", icon: <RotateCcw />, kbd: keyLabel(keys.reopenTab, platform), disabled: !canReopen(strip), onClick: run(() => void reopenClosed()) },
     ];
     if (isPageTab(id)) return items;
-    return [...items, { divider: true, label: "" }, ...sessionMenuItems(id)];
+    return [...items, { divider: true, label: "" }, ...sessionMenuItems(sessionOf(id))];
   };
   /** The session's own actions, one list for the ⋯ menu and the tab's menu: Pin reads Unpin when pinned, End… comes last. */
   const sessionMenuItems = (key: string): MenuItem[] => {
@@ -542,7 +551,7 @@ export function V3Window({
     else act({ type: "need", item: n });
   };
 
-  const activeSession = active && !active.startsWith("page:") ? active : null;
+  const activeSession = active && !active.startsWith("page:") ? sessionOf(active) : null;
   const runs = runRows(data.sessions);
   const bar = activeSession ? data.bar(activeSession) : null;
   const next = activeSession && !dismissed.has(activeSession) ? data.next(activeSession) : null;
@@ -559,8 +568,8 @@ export function V3Window({
             : PAGE_TAB[p as PageId | "sessions-table"]),
       };
     }
-    const s = data.sessions.find((x) => x.key === id);
-    return { kind: "session" as const, id, title: s?.title ?? id, state: s?.state ?? "idle" };
+    const s = data.sessions.find((x) => x.key === sessionOf(id));
+    return { kind: "session" as const, id, title: s?.title ?? sessionOf(id), state: s?.state ?? "idle" };
   });
   const batch = (keys: string[]): BatchActions => ({
     onClear: () => setSelection(null),
@@ -936,6 +945,7 @@ export function V3Window({
           selection={selection}
           openKeys={openKids}
           onSelect={openSession}
+          onRowMenu={(key, at) => setOverlay({ rowMenu: key, ...shellPoint(at) })}
           // One session unfolded at a time (owner, 2026-11-24): opening one folds the other.
           onToggleChildren={(k) => setOpenKids((c) => (c.has(k) ? new Set() : new Set([k])))}
           onCheck={(k) => setSelection((c) => { const n = new Set(c ?? []); n.has(k) ? n.delete(k) : n.add(k); return n; })}
@@ -1086,6 +1096,20 @@ export function V3Window({
             if (p.kind === "configure") return (setSection("Open in"), openPage("settings"));
             act({ type: "open-in", key: openMenuOf, pick: p });
           }}
+        />
+      </Anchored>
+    ) : overlay && typeof overlay === "object" && "rowMenu" in overlay ? (
+      // Right-click on a session in the list: open it here or in a tab of its own, then its own actions.
+      <Anchored onClose={close} className="absolute z-20" style={{ left: overlay.x, top: overlay.y }}>
+        <Menu
+          label="Session"
+          width={260}
+          items={[
+            { id: "open", label: "Open", onClick: () => (close(), openSession(overlay.rowMenu)) },
+            { id: "open-new", label: "Open in new tab", icon: <Plus />, onClick: () => (close(), openInNewTab(overlay.rowMenu)) },
+            { divider: true, label: "" },
+            ...sessionMenuItems(overlay.rowMenu),
+          ]}
         />
       </Anchored>
     ) : overlay && typeof overlay === "object" && "tabMenu" in overlay ? (

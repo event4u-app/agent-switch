@@ -115,3 +115,25 @@ describe("tab strip state", () => {
     expect(nextActive(["a"], [], "a", "a")).toBeNull();
   });
 });
+
+describe("the default tab and more tabs of one session (owner, 2026-11-25)", () => {
+  it("opens in the first unpinned session tab, in place; a session with a tab goes to it", async () => {
+    const { openInDefault, EMPTY_TABS: E } = await import("./tabs.js");
+    const s = { ...E, order: ["p1", "page:library", "a", "b"], pinned: ["p1"] };
+    const r = openInDefault(s, "c");
+    expect(r.id).toBe("c");
+    expect(r.state.order).toEqual(["p1", "page:library", "c", "b"]);
+    expect(openInDefault(r.state, "b")).toEqual({ state: r.state, id: "b" });
+    expect(openInDefault(E, "x").state.order).toEqual(["x"]);
+  });
+
+  it("another tab of a session is a copy right after the asked one; sessionOf reads either id", async () => {
+    const { openAnother, sessionOf, EMPTY_TABS: E } = await import("./tabs.js");
+    const s = { ...E, order: ["a", "b"] };
+    const one = openAnother(s, "a", "a");
+    expect(one).toEqual({ state: { ...s, order: ["a", "a#2", "b"] }, id: "a#2" });
+    expect(openAnother(one.state, "a", "a#2").id).toBe("a#3");
+    expect(openAnother(s, "c").state.order).toEqual(["a", "b", "c"]);
+    expect([sessionOf("a#2"), sessionOf("a"), sessionOf("page:x")]).toEqual(["a", "a", "page:x"]);
+  });
+});

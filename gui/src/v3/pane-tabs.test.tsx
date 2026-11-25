@@ -82,3 +82,36 @@ describe("the Sessions window's tabs", () => {
     expect(screen.getAllByText("All sessions").length).toBeGreaterThan(0);
   });
 });
+
+describe("one default tab; more tabs by right-click (owner, 2026-11-25)", () => {
+  const two = () => {
+    const base = data().sessions[0];
+    render(<V3Window data={{ ...data(), sessions: [base, { ...base, key: "s2", title: "Checkout flow" }] }} slots={slots} act={vi.fn()} />);
+    return within(screen.getByLabelText("Sessions window"));
+  };
+  const tabs = () => screen.getAllByRole("tab").map((t) => t.textContent ?? "");
+
+  it("a click opens the session in the default tab, in place of the one there", () => {
+    const win = two();
+    fireEvent.click(win.getByText("Event store"));
+    const before = tabs().length;
+    fireEvent.click(win.getByText("Checkout flow"));
+    expect(tabs().length).toBe(before);
+    expect(tabs().some((t) => t.includes("Checkout flow"))).toBe(true);
+    expect(tabs().some((t) => t.includes("Event store"))).toBe(false);
+  });
+
+  it("right-click › Open in new tab keeps the default tab and adds one; Duplicate tab copies a tab", () => {
+    const win = two();
+    fireEvent.click(win.getByText("Event store"));
+    const before = tabs().length;
+    fireEvent.contextMenu(win.getByText("Checkout flow"));
+    const menu = screen.getByRole("menu", { name: "Session" });
+    expect(within(menu).getByText("Open")).toBeTruthy();
+    fireEvent.click(within(menu).getByText("Open in new tab"));
+    expect(tabs().length).toBe(before + 1);
+    fireEvent.contextMenu(screen.getByRole("tab", { name: /Checkout flow/ }));
+    fireEvent.click(within(screen.getByRole("menu", { name: "Tab" })).getByText("Duplicate tab"));
+    expect(tabs().filter((t) => t.includes("Checkout flow")).length).toBe(2);
+  });
+});

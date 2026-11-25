@@ -416,7 +416,9 @@ describe("the v3 keyboard (spec §12)", () => {
   it("⌘2 selects the second session tab; ⌃Tab cycles recent sessions and picks on release", () => {
     const d = data();
     mountMac({ sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow" }] });
-    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Checkout flow"));
+    // A click opens in the default tab; a second tab is asked for (owner, 2026-11-25).
+    fireEvent.contextMenu(within(screen.getByLabelText("Sessions window")).getByText("Checkout flow"));
+    fireEvent.click(within(screen.getByRole("menu", { name: "Session" })).getByText("Open in new tab"));
     press("1");
     expect(screen.getByRole("tab", { name: /Event store/ }).getAttribute("aria-selected")).toBe("true");
     press("2");

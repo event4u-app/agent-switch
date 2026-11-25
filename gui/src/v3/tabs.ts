@@ -30,6 +30,41 @@ export const CLOSED_KEEP = 25;
 
 export const isPageTab = (id: string): boolean => id.startsWith("page:");
 
+/**
+ * A session can have more than one tab (owner, 2026-11-25: duplicate a tab, open a session in a new
+ * tab). The first one's id is the session key; each copy is `<key>#<n>`. Pure.
+ */
+export const sessionOf = (id: string): string => (isPageTab(id) ? id : id.replace(/#\d+$/, ""));
+
+/** A fresh id for one more tab of the session (`<key>#2`, `#3`, …). Pure. */
+export function copyId(s: TabState, key: string): string {
+  let n = 2;
+  while (s.order.includes(`${key}#${n}`)) n += 1;
+  return `${key}#${n}`;
+}
+
+/**
+ * Everything opens in the default tab (owner, 2026-11-25): the first session tab that is not pinned
+ * takes the session in place; a session that already has a tab goes to it. With no such tab, a new
+ * one. Returns the new state and the tab to show. Pure.
+ */
+export function openInDefault(s: TabState, key: string): { state: TabState; id: string } {
+  const own = s.order.find((id) => !isPageTab(id) && sessionOf(id) === key);
+  if (own) return { state: s, id: own };
+  const slot = s.order.find((id) => !isPageTab(id) && !s.pinned.includes(id));
+  if (!slot) return { state: openTab(s, key), id: key };
+  return { state: settle({ ...s, order: s.order.map((id) => (id === slot ? key : id)) }), id: key };
+}
+
+/** One more tab: the session's own when it has none, else a copy, right after `after` when given. Pure. */
+export function openAnother(s: TabState, key: string, after?: string): { state: TabState; id: string } {
+  const has = s.order.some((id) => !isPageTab(id) && sessionOf(id) === key);
+  const id = has ? copyId(s, key) : key;
+  const at = after ? s.order.indexOf(after) : -1;
+  const order = at < 0 ? [...s.order, id] : [...s.order.slice(0, at + 1), id, ...s.order.slice(at + 1)];
+  return { state: settle({ ...s, order }), id };
+}
+
 export function groupOf(id: string, pinned: readonly string[]): 0 | 1 | 2 {
   return pinned.includes(id) ? 0 : isPageTab(id) ? 1 : 2;
 }

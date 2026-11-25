@@ -598,7 +598,9 @@ export function SessionRow({
   onBoard,
   focusKey,
   age,
+  onMenu,
 }: {
+  onMenu?: (key: string, at: { x: number; y: number }) => void;
   s: RowSession;
   active?: boolean;
   comfortable?: boolean;
@@ -644,6 +646,7 @@ export function SessionRow({
           })
         }
         onMouseLeave={onPeek && (() => onPeek(null, 0))}
+        onContextMenu={onMenu && ((e) => (e.preventDefault(), onPeek?.(null, 0), onMenu(s.key, { x: e.clientX, y: e.clientY })))}
         className={cn("group/row relative rounded-md pl-2.5 pr-2", second ? "py-1.5" : "py-1", block ? null : active ? "bg-ac-raise" : "hover:bg-ac-raise")}
       >
         {active && !block && <Marker />}
@@ -752,7 +755,10 @@ export function SessionsZone({
   head = true,
   pinned = true,
   card,
+  onRowMenu,
 }: {
+  /** Right-click on a row: its menu at the pointer (owner, 2026-11-25: open in a new tab, …). */
+  onRowMenu?: (key: string, at: { x: number; y: number }) => void;
   /** The "Sessions N · Status" head; the window's tabs name the list instead (owner, 2026-11-25). */
   head?: boolean;
   /** Done today and Older pinned at the foot; the window draws them under its search instead. */
@@ -929,6 +935,7 @@ export function SessionsZone({
             onBoard={onBoard}
             focusKey={focusKey}
             age={ageOf(s)}
+            onMenu={onRowMenu}
           />
           );
           // A card: one frame per session; the open one says so with the row's own marker, not a second frame.
