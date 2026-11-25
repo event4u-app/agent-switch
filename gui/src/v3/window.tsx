@@ -582,8 +582,9 @@ export function V3Window({
   });
   const batch = (keys: string[]): BatchActions => ({
     onClear: () => setSelection(null),
-    onPin: () => act({ type: "batch", op: "onPin", keys }),
-    onArchive: () => act({ type: "batch", op: "onArchive", keys }),
+    // Done with them: the selection ends, the list goes back to normal.
+    onPin: () => (act({ type: "batch", op: "onPin", keys }), setSelection(null)),
+    onArchive: () => (act({ type: "batch", op: "onArchive", keys }), setSelection(null)),
     onClean: () => act({ type: "batch", op: "onClean", keys }),
     onEnd: () => act({ type: "batch", op: "onEnd", keys }),
   });
@@ -912,7 +913,7 @@ export function V3Window({
       <div className="shrink-0 px-2.5 pt-2" data-pane-tabs="">
         <Segmented
           label="Show"
-          size="sm"
+          size="xs"
           fill
           dense
           value={paneTab}
@@ -929,7 +930,7 @@ export function V3Window({
           <div className="px-2.5 pt-2" data-needs-kind="">
             <Segmented
               label="Asked by"
-              size="sm"
+              size="xs"
               fill
               value={needsKind}
               onChange={setNeedsKind}

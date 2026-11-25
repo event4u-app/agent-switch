@@ -144,7 +144,31 @@ export interface BatchActions {
   onEnd: () => void;
 }
 
+/**
+ * A tooltip that shows at once on hover and keyboard focus, under its control, right-aligned
+ * (owner, 2026-11-25: the native title shows late or not at all inside the design canvas).
+ */
+export function Tip({ text, children }: { text: string; children: ReactNode }) {
+  return (
+    <span className="group/tip relative inline-flex">
+      {children}
+      <span role="tooltip" className="pointer-events-none absolute right-0 top-full z-30 mt-1 w-max max-w-[220px] rounded-md border border-ac-line2 bg-ac-panel px-2 py-1 text-[11px] leading-snug text-ac-text opacity-0 shadow-[var(--ac-shadow)] transition-opacity delay-150 group-focus-within/tip:opacity-100 group-hover/tip:opacity-100">
+        {text}
+      </span>
+    </span>
+  );
+}
+
 export function BatchBar({ count, compact, className, actions }: { count: number; compact?: boolean; className?: string; actions: BatchActions }) {
+  const none = count === 0;
+  // The list's bar (owner, 2026-11-25): no End here, each icon says what it does and waits for a selection.
+  const icon = (label: string, onClick: () => void, glyph: ReactNode) => (
+    <Tip text={none ? `${label} · select sessions first` : label}>
+      <IconButton label={label} className="size-7 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent" disabled={none} onClick={onClick}>
+        {glyph}
+      </IconButton>
+    </Tip>
+  );
   return (
     <div className={cn("flex items-center gap-1.5 rounded-[10px] border border-ac-line2 bg-ac-raise px-2 py-1.5", className)}>
       <IconButton label="Clear selection  Esc" className="size-6" onClick={actions.onClear}>
@@ -153,15 +177,9 @@ export function BatchBar({ count, compact, className, actions }: { count: number
       <span className="mr-auto whitespace-nowrap text-xs text-ac-text">{count} selected</span>
       {compact ? (
         <>
-          <IconButton label="Pin" className="size-7" onClick={actions.onPin}>
-            <Pin />
-          </IconButton>
-          <IconButton label="Archive" className="size-7" onClick={actions.onArchive}>
-            <Archive />
-          </IconButton>
-          <IconButton label="Clean worktrees (merged only; dirty ones are skipped)" className="size-7" onClick={actions.onClean}>
-            <FolderMinus />
-          </IconButton>
+          {icon(`Pin ${count || ""} selected`.replace("  ", " "), actions.onPin, <Pin />)}
+          {icon(`Archive ${count || ""} selected`.replace("  ", " "), actions.onArchive, <Archive />)}
+          {icon("Clean up worktrees (merged PRs only; ones with changes are skipped)", actions.onClean, <FolderMinus />)}
         </>
       ) : (
         <>
@@ -174,11 +192,11 @@ export function BatchBar({ count, compact, className, actions }: { count: number
           <Act title="Removes worktrees whose PR merged; dirty ones are skipped" onClick={actions.onClean}>
             <FolderMinus /> Clean worktrees
           </Act>
+          <Act kind="danger" onClick={actions.onEnd}>
+            End…
+          </Act>
         </>
       )}
-      <Act kind="danger" onClick={actions.onEnd}>
-        End…
-      </Act>
     </div>
   );
 }

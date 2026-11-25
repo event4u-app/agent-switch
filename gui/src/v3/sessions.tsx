@@ -891,7 +891,7 @@ export function SessionsZone({
           </button>
         )}
       </div>}
-      {selection && <BatchBar compact count={selection.size} actions={batch} className="mx-1.5 mb-1" />}
+      {selection && <BatchBar compact count={selection.size} actions={batch} className={cn("mb-1.5", card ? "mx-2.5" : "mx-1.5")} />}
       {/* Cards line up with the tabs over them and the filter under them (owner, 2026-11-25): the same 10 px inset. */}
       <div className={card ? "px-2.5" : "px-1.5"} data-session-list {...holdBind}>
         {live.length === 0 && !loading && (

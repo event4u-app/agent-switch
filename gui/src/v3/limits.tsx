@@ -193,7 +193,7 @@ export function LimitsStrip({ accounts, nowMs, openKey, currentKey, onOpen, onSi
         <div className="px-1">
           <Segmented
             label="Tool"
-            size="sm"
+            size="xs"
             fill
             value={tab}
             onChange={setPicked}

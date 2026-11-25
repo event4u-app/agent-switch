@@ -26,7 +26,8 @@ export function Segmented<V extends string>({
   fill?: boolean;
   /** Options sized by their words (no equal thirds), tighter padding. */
   dense?: boolean;
-  size?: "sm" | "md";
+  /** xs: 28 px, the height of the icon buttons beside it (a pane head, owner 2026-11-25). */
+  size?: "xs" | "sm" | "md";
 }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const uid = useId();
@@ -52,7 +53,7 @@ export function Segmented<V extends string>({
       aria-label={label}
       className={cn(
         "inline-flex w-fit shrink-0 items-center gap-0.5 rounded-md border border-ac-line bg-ac-bg p-[3px]",
-        size === "sm" ? "h-8" : "h-9",
+        size === "xs" ? "h-7 p-[2px]" : size === "sm" ? "h-8" : "h-9",
         fill && "flex w-full",
       )}
     >
