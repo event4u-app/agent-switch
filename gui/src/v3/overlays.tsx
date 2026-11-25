@@ -46,6 +46,13 @@ export interface PaletteEntry {
 }
 
 const GROUP_LABEL = { sessions: "Sessions", branches: "Branches & PRs", commands: "Commands" } as const;
+type PaletteTab = "all" | PaletteEntry["group"];
+const PALETTE_TABS: { id: PaletteTab; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "sessions", label: "Sessions" },
+  { id: "branches", label: "Branches & PRs" },
+  { id: "commands", label: "Commands" },
+];
 
 /** Entries matching every word of the query; `>` limits to commands. Pure. */
 export function filterPalette(entries: readonly PaletteEntry[], query: string, scope: "all" | "week"): PaletteEntry[] {
@@ -60,10 +67,16 @@ export function Palette({ entries, onOpen, onClose }: { entries: PaletteEntry[];
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<"all" | "week">("all");
   const [cursor, setCursor] = useState(0);
+  // Tabs as in PhpStorm's Search Everywhere (owner, 2026-11-25): All, or one kind; Tab / ⇧Tab steps through them.
+  const [tab, setTab] = useState<PaletteTab>("all");
   const hits = useMemo(() => filterPalette(entries, query, scope), [entries, query, scope]);
-  const ordered = (["sessions", "branches", "commands"] as const).flatMap((g) => hits.filter((h) => h.group === g));
+  const ordered = (["sessions", "branches", "commands"] as const).filter((g) => tab === "all" || tab === g).flatMap((g) => hits.filter((h) => h.group === g));
+  const pick = (t: PaletteTab) => (setTab(t), setCursor(0));
   const key = (e: KeyboardEvent) => {
-    if (e.key === "ArrowDown") setCursor((c) => Math.min(c + 1, ordered.length - 1));
+    if (e.key === "Tab") {
+      const i = PALETTE_TABS.findIndex((t) => t.id === tab);
+      pick(PALETTE_TABS[(i + (e.shiftKey ? PALETTE_TABS.length - 1 : 1)) % PALETTE_TABS.length].id);
+    } else if (e.key === "ArrowDown") setCursor((c) => Math.min(c + 1, ordered.length - 1));
     else if (e.key === "ArrowUp") setCursor((c) => Math.max(c - 1, 0));
     else if (e.key === "Enter" && ordered[cursor]) onOpen(ordered[cursor], e.metaKey);
     else if (e.key === "Escape") onClose();
@@ -95,8 +108,30 @@ export function Palette({ entries, onOpen, onClose }: { entries: PaletteEntry[];
             </button>
           </span>
         </div>
+        <div role="tablist" aria-label="Show" className="flex h-9 items-end gap-1 border-b border-ac-line px-3">
+          {PALETTE_TABS.map((t) => {
+            const n = t.id === "all" ? hits.length : hits.filter((h) => h.group === t.id).length;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                tabIndex={-1}
+                onClick={() => pick(t.id)}
+                className={cn("-mb-px inline-flex h-8 items-center gap-1.5 border-b-2 px-2.5 text-[12px]", tab === t.id ? "border-ac-brand font-medium text-ac-text" : "border-transparent text-ac-muted hover:text-ac-text")}
+              >
+                {t.label}
+                <span className="text-[11px] tabular-nums text-ac-faint">{n}</span>
+              </button>
+            );
+          })}
+          <span className="ml-auto pb-2 text-[11px] text-ac-faint">
+            <Kbd>Tab</Kbd> next
+          </span>
+        </div>
         <div className="max-h-[520px] relative overflow-y-auto p-2">
-          {(["sessions", "branches", "commands"] as const).map((g) => {
+          {(["sessions", "branches", "commands"] as const).filter((g) => tab === "all" || tab === g).map((g) => {
             const list = ordered.filter((h) => h.group === g);
             if (!list.length) return null;
             return (

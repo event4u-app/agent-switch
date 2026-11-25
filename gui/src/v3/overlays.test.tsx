@@ -21,8 +21,9 @@ describe("⌘K palette (spec §7.1)", () => {
   it("grouped, the cursor row has the raise fill and its hint; ↓ and ↵ open, ⌘↵ in a new tab", () => {
     const onOpen = vi.fn();
     render(<Palette entries={entries} onOpen={onOpen} onClose={vi.fn()} />);
-    expect(screen.getByText("Sessions")).toBeTruthy();
-    expect(screen.getByText("Branches & PRs")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /^Sessions/ })).toBeTruthy();
+    expect(screen.getAllByText("Sessions").length).toBe(2);
+    expect(screen.getAllByText("Branches & PRs").length).toBe(2);
     const first = screen.getAllByRole("option")[0];
     expect(first.className).toContain("bg-ac-raise");
     expect(screen.getByText("↵ Resume…")).toBeTruthy();
@@ -90,5 +91,26 @@ describe("⌃Tab switcher, peek card, inbox (spec §7.2–§7.4)", () => {
     expect(screen.getByText("↵ once · ⇧↵ always · ⌫ deny · L later")).toBeTruthy();
     rerender(<InboxPopover nowMs={NOW} focusedId="a" onVerb={vi.fn()} onAllLater={vi.fn()} items={[item("a", "here")]} history={[]} />);
     expect(screen.queryByText(/⇧↵ always/)).toBeNull();
+  });
+});
+
+describe("⌘K palette tabs, as in PhpStorm's Search Everywhere (owner, 2026-11-25)", () => {
+  it("All, or one kind: a tab narrows the list; Tab and ⇧Tab step through them", async () => {
+    const { Palette } = await import("./overlays.js");
+    const entries = [
+      { id: "s", group: "sessions" as const, title: "Event store" },
+      { id: "b", group: "branches" as const, title: "feat/store" },
+      { id: "c", group: "commands" as const, title: "New session" },
+    ];
+    render(<Palette entries={entries} onOpen={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByRole("tab", { name: /^All/ }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getAllByRole("option")).toHaveLength(3);
+    fireEvent.click(screen.getByRole("tab", { name: /^Commands/ }));
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["New session"]);
+    const box = screen.getByLabelText("Search");
+    fireEvent.keyDown(box, { key: "Tab" });
+    expect(screen.getByRole("tab", { name: /^All/ }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(box, { key: "Tab", shiftKey: true });
+    expect(screen.getByRole("tab", { name: /^Commands/ }).getAttribute("aria-selected")).toBe("true");
   });
 });
