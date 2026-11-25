@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "../lib/utils.js";
-import { ArrowLeftRight, ArrowRightToLine, ClipboardCopy, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, SquareTerminal, Swords, Unplug, Users, Gavel, Wrench, X } from "lucide-react";
+import { ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, ChevronLeft, ChevronRight, ClipboardCopy, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, ListX, SquareX, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, SquareTerminal, Swords, Unplug, Users, Gavel, Wrench, X } from "lucide-react";
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
 import type { ActivityEvent, IdentityColor, ToolEntry } from "../vm/types.js";
@@ -39,7 +39,7 @@ import { AccountMark, Act, inShell, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding } from "./keys.js";
-import { EMPTY_TABS, canReopen, closable, closeOthers, closeTab, closeToRight, closeUnpinned, isPageTab, mainTab, moveTab, nextActive, openAnother, openInDefault, openTab, pinTab, reopenTab, seedTabs, sessionOf, unpinTab, type TabState } from "./tabs.js";
+import { EMPTY_TABS, canReopen, canShift, closable, closeOthers, closeTab, closeToLeft, closeToRight, closeUnpinned, shiftTab, isPageTab, mainTab, moveTab, nextActive, openAnother, openInDefault, openTab, pinTab, reopenTab, seedTabs, sessionOf, unpinTab, type TabState } from "./tabs.js";
 import { NeedRow, needSession, nextFocus, shownNeeds } from "./needs.js";
 import { canCopy, copyConversation } from "./copy-source.js";
 import { Switcher } from "./overlays.js";
@@ -331,6 +331,12 @@ export function V3Window({
     setStrip(r.state);
     setActive(r.id);
   };
+  /** A new tab for the session, pinned right away (owner, 2026-11-26, as elvau's "open as pinned tab"). */
+  const openInPinnedTab = (key: string) => {
+    const r = openAnother(strip, key);
+    setStrip(pinTab(r.state, r.id));
+    setActive(r.id);
+  };
   // 7.7: a subagent opens read-only in place of its parent's body, until Back or another session.
   const [subView, setSubView] = useState<{ parent: string; agentId: string } | null>(null);
   const openSubagent = slots.subagent
@@ -384,18 +390,30 @@ export function V3Window({
   /** Right click on a tab (owner request 2026-11-05): pin, the close family, reopen, and the session's own actions. */
   const tabMenuItems = (id: string): MenuItem[] => {
     const pinnedTab = strip.pinned.includes(id);
+    const isMain = id === mainTab(strip);
+    const before = strip.order.slice(0, strip.order.indexOf(id));
     const after = strip.order.slice(strip.order.indexOf(id) + 1);
     const run = (f: () => void) => () => (setOverlay(null), f());
+    // The main tab (owner, 2026-11-25/26): always first and open, never pinned, never moved.
+    const place: MenuItem[] = isMain
+      ? [{ label: "", note: "Main tab: always first and always open. Everything opens here." }]
+      : [
+          pinnedTab
+            ? { id: "unpin", label: "Unpin tab", icon: <PinOff />, onClick: run(() => setStrip((s) => unpinTab(s, id))) }
+            : { id: "pin", label: "Pin tab", icon: <Pin />, onClick: run(() => setStrip((s) => pinTab(s, id))) },
+          { id: "move-left", label: "Move left", icon: <ChevronLeft />, disabled: !canShift(strip, id, -1), onClick: run(() => setStrip((s) => shiftTab(s, id, -1))) },
+          { id: "move-right", label: "Move right", icon: <ChevronRight />, disabled: !canShift(strip, id, 1), onClick: run(() => setStrip((s) => shiftTab(s, id, 1))) },
+        ];
     const items: MenuItem[] = [
-      pinnedTab
-        ? { id: "unpin", label: "Unpin tab", icon: <PinOff />, onClick: run(() => setStrip((s) => unpinTab(s, id))) }
-        : { id: "pin", label: "Pin tab", icon: <Pin />, onClick: run(() => setStrip((s) => pinTab(s, id))) },
+      ...place,
       ...(isPageTab(id) ? [] : [{ id: "duplicate", label: "Duplicate tab", icon: <Copy />, onClick: run(() => openInNewTab(sessionOf(id), id)) }]),
       { divider: true, label: "" },
-      { id: "close", label: pinnedTab ? "Close pinned tab" : "Close tab", icon: <X />, ...(id === mainTab(strip) ? { disabled: true, why: "The main tab stays: everything opens in it" } : {}), onClick: run(() => changeStrip((s) => closeTab(s, id, true))) },
-      { id: "close-others", label: "Close other tabs", disabled: !closable(strip, strip.order.filter((x) => x !== id)).length, onClick: run(() => changeStrip((s) => closeOthers(s, id))) },
+      // The main tab has no Close and nothing to its left (owner, 2026-11-26, as elvau).
+      ...(isMain ? [] : [{ id: "close", label: pinnedTab ? "Close pinned tab" : "Close tab", icon: <X />, onClick: run(() => changeStrip((s) => closeTab(s, id, true))) }]),
+      { id: "close-others", label: "Close other tabs", icon: <ListX />, disabled: !closable(strip, strip.order.filter((x) => x !== id)).length, onClick: run(() => changeStrip((s) => closeOthers(s, id))) },
+      ...(isMain ? [] : [{ id: "close-left", label: "Close tabs to the left", icon: <ArrowLeftToLine />, disabled: !closable(strip, before).length, onClick: run(() => changeStrip((s) => closeToLeft(s, id))) }]),
       { id: "close-right", label: "Close tabs to the right", icon: <ArrowRightToLine />, disabled: !closable(strip, after).length, onClick: run(() => changeStrip((s) => closeToRight(s, id))) },
-      { id: "close-unpinned", label: "Close all unpinned tabs", disabled: !closable(strip, strip.order).length, onClick: run(() => changeStrip(closeUnpinned)) },
+      { id: "close-unpinned", label: "Close all unpinned tabs", icon: <SquareX />, disabled: !closable(strip, strip.order).length, onClick: run(() => changeStrip(closeUnpinned)) },
       { divider: true, label: "" },
       { id: "reopen", label: "Reopen closed tab", icon: <RotateCcw />, kbd: keyLabel(keys.reopenTab, platform), disabled: !canReopen(strip), onClick: run(() => void reopenClosed()) },
     ];
@@ -1125,6 +1143,7 @@ export function V3Window({
           items={[
             { id: "open", label: "Open", onClick: () => (close(), openSession(overlay.rowMenu)) },
             { id: "open-new", label: "Open in new tab", icon: <Plus />, onClick: () => (close(), openInNewTab(overlay.rowMenu)) },
+            { id: "open-pinned", label: "Open in pinned tab", icon: <Pin />, onClick: () => (close(), openInPinnedTab(overlay.rowMenu)) },
             { divider: true, label: "" },
             ...sessionMenuItems(overlay.rowMenu),
           ]}
