@@ -120,3 +120,21 @@ describe("End one click away (owner, 2026-11-25)", () => {
     expect(screen.getByRole("dialog", { name: /End/ })).toBeTruthy();
   });
 });
+
+describe("Needs you: Sessions | System (owner, 2026-11-25)", () => {
+  it("splits what a session asks from what the app asks; a waiting session is not listed under Other", () => {
+    const base = data().sessions[0];
+    const ask = { id: "q", kind: "question" as const, who: "Checkout flow", what: "asks you", verb: "Reply", subject: "s2" };
+    render(<V3Window data={{ ...data(), needs: [...data().needs, ask] as never, sessions: [base, { ...base, key: "s2", title: "Checkout flow", state: "needs-you" as const, needsYou: true }] }} slots={slots} act={vi.fn()} />);
+    const win = within(screen.getByLabelText("Sessions window"));
+    paneTab("Other");
+    expect(win.queryByText("Checkout flow")).toBeNull();
+    paneTab("Needs you");
+    expect(win.getByRole("radio", { name: /^Sessions/ }).getAttribute("aria-checked")).toBe("true");
+    expect(win.getByText("asks you")).toBeTruthy();
+    expect(win.queryByText("94% of 5h")).toBeNull();
+    fireEvent.click(win.getByRole("radio", { name: /^System/ }));
+    expect(win.getByText("94% of 5h")).toBeTruthy();
+    expect(win.queryByText("asks you")).toBeNull();
+  });
+});

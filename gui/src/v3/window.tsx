@@ -277,6 +277,9 @@ export function V3Window({
   const [focusedNeed, setFocusedNeed] = useState<string | null>(null);
   // Opens on Running, as alternative B shows it (owner, 2026-11-25); ⌘J brings Needs you to the front.
   const [paneTab, setPaneTab] = useState<"you" | "running" | "other">("running");
+  // Needs you splits into what a session asks and what the app asks (limits, sign-ins, updates) (owner, 2026-11-25).
+  // Opens on Sessions while a session waits on you, else on System; a pick stays.
+  const [needsKindPick, setNeedsKind] = useState<"sessions" | "system" | null>(null);
 
   const lastActiveOf = (k: string) => data.table.find((t) => t.key === k)?.lastActiveMs ?? null;
   const [focusChild, setFocusChild] = useState<string | null>(null);
@@ -460,6 +463,7 @@ export function V3Window({
 
   // Tool updates join the queue (spec §10.4); limit items open the decision sheet.
   const needs = useMemo(() => allNeeds({ needs: data.needs, tools: data.tools, nowMs: data.nowMs }), [data.needs, data.tools, data.nowMs]);
+  const needsKind = needsKindPick ?? (needs.some((n) => !!needSession(n)) ? "sessions" : "system");
   // The tray's Start session opens the same New-session dialog as ⌘N, once per request.
   const newSessionDone = useRef<number | null>(null);
   useEffect(() => {
@@ -494,8 +498,11 @@ export function V3Window({
       // ⌘J walks the Needs you items: that tab comes to the front first, then the item takes focus.
       // An item about a child focuses the child's row in the tree instead: the tab that lists its session.
       const root = focusChild ? findChild(data.sessions, focusChild)?.root : undefined;
-      const want = focusChild ? (root && statusGroup(root) !== "Running" ? "other" : "running") : "you";
+      const want = focusChild ? (root && statusGroup(root) === "Idle" ? "other" : "running") : "you";
       if (paneTab !== want) return setPaneTab(want);
+      const item = needs.find((n) => n.id === focusedNeed);
+      const kind = item && needSession(item) ? "sessions" : "system";
+      if (!focusChild && item && needsKind !== kind) return setNeedsKind(kind);
       if (!focusChild) [...document.querySelectorAll<HTMLElement>("[data-need]")].find((el) => el.dataset.need === focusedNeed)?.focus();
       return;
     }
@@ -504,7 +511,7 @@ export function V3Window({
     const lost = !now || now === document.body || !now.isConnected || zoneHolds(now);
     if (opener?.isConnected && lost) opener.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusedNeed, paneTab]);
+  }, [focusedNeed, paneTab, needsKind]);
   // A session at its limit opens its decision sheet by itself (once per item
   // version) and brings the window forward — the user still confirms the move.
   // agent-config's question opens it too (once per request), and a limit it
@@ -908,17 +915,32 @@ export function V3Window({
           options={[
             { value: "you", label: <>Needs you <PaneCount n={needs.length} tone={needs.length ? "warn" : undefined} /></> },
             { value: "running", label: <>Running <PaneCount n={liveSessions.filter((x) => statusGroup(x) === "Running").length} /></> },
-            { value: "other", label: <>Other <PaneCount n={liveSessions.filter((x) => statusGroup(x) !== "Running").length} /></> },
+            { value: "other", label: <>Other <PaneCount n={liveSessions.filter((x) => statusGroup(x) === "Idle").length} /></> },
           ]}
         />
       </div>
       <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
         {paneTab === "you" ? (
-          <NeedsZone full items={foundNeeds} away={data.away} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
+          <>
+            <div className="px-2.5 pt-2" data-needs-kind="">
+              <Segmented
+                label="Asked by"
+                size="sm"
+                fill
+                value={needsKind}
+                onChange={setNeedsKind}
+                options={[
+                  { value: "sessions", label: <>Sessions <PaneCount n={foundNeeds.filter((n) => !!needSession(n)).length} /></> },
+                  { value: "system", label: <>System <PaneCount n={foundNeeds.filter((n) => !needSession(n)).length} /></> },
+                ]}
+              />
+            </div>
+            <NeedsZone full items={foundNeeds.filter((n) => !!needSession(n) === (needsKind === "sessions"))} away={needsKind === "system" ? data.away : null} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
+          </>
         ) : (
         <SessionsZone
-          // Running, or everything else (idle, waiting on you, …) under Other (owner, 2026-11-25).
-          sessions={found.filter((x) => (statusGroup(x) === "Running") === (paneTab === "running"))}
+          // Running, or Other: inactive, older ones. A session waiting on you is under Needs you (owner, 2026-11-25).
+          sessions={found.filter((x) => statusGroup(x) === (paneTab === "running" ? "Running" : "Idle"))}
           activeKey={activeSession}
           sort="activity"
           // No groups, nothing to fold, no sort menu: newest activity on top, always (owner, 2026-11-25).
