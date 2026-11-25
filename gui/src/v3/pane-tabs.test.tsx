@@ -112,12 +112,11 @@ describe("one default tab; more tabs by right-click (owner, 2026-11-25)", () => 
   });
 });
 
-describe("End one click away (owner, 2026-11-25)", () => {
-  it("a red ✕ beside ⋯ opens the same End dialog the menu does", () => {
+describe("no red ✕ in the session bar (owner, 2026-11-25)", () => {
+  it("End stays in ⋯ only", () => {
     render(<V3Window data={{ ...data(), health: { state: "ready" } }} slots={slots} act={vi.fn()} />);
     fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
-    fireEvent.click(screen.getByLabelText("End session…"));
-    expect(screen.getByRole("dialog", { name: /End/ })).toBeTruthy();
+    expect(screen.queryByLabelText("End session…")).toBeNull();
   });
 });
 
