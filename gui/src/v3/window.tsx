@@ -333,6 +333,8 @@ export function V3Window({
   const openSubagent = slots.subagent
     ? (parent: string, agentId: string) => {
         openSession(parent);
+        // The session's children stay unfolded, so the open subagent's row shows as selected (owner, 2026-11-25).
+        setOpenKids(new Set([parent]));
         setSubView({ parent, agentId });
       }
     : undefined;
@@ -946,6 +948,7 @@ export function V3Window({
           openKeys={openKids}
           onSelect={openSession}
           onRowMenu={(key, at) => setOverlay({ rowMenu: key, ...shellPoint(at) })}
+          currentChild={subView && subView.parent === activeSession ? subView.agentId : null}
           // One session unfolded at a time (owner, 2026-11-24): opening one folds the other.
           onToggleChildren={(k) => setOpenKids((c) => (c.has(k) ? new Set() : new Set([k])))}
           onCheck={(k) => setSelection((c) => { const n = new Set(c ?? []); n.has(k) ? n.delete(k) : n.add(k); return n; })}

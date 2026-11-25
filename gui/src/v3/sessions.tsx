@@ -456,9 +456,11 @@ interface TreeHandlers {
   onPeek?: (key: string | null, y: number) => void;
   /** ⌘J: the child row to focus (3.4). */
   focusKey?: string | null;
+  /** The child shown in the workbench (a subagent open under its session): its row reads as selected too. */
+  currentChild?: string | null;
 }
 
-function ChildRow({ c, parent, depth, rails, last, onSelect, onSubagent, onBoard, onPeek, focusKey }: { c: ChildModel; parent: string; depth: number; rails: readonly boolean[]; last: boolean } & TreeHandlers) {
+function ChildRow({ c, parent, depth, rails, last, onSelect, onSubagent, onBoard, onPeek, focusKey, currentChild }: { c: ChildModel; parent: string; depth: number; rails: readonly boolean[]; last: boolean } & TreeHandlers) {
   const ref = useRef<HTMLDivElement>(null);
   const viewable = !!onSubagent && subagentOpens(c);
   const board = !!onBoard && boardOpens(c);
@@ -484,9 +486,11 @@ function ChildRow({ c, parent, depth, rails, last, onSelect, onSubagent, onBoard
         })
       }
       onMouseLeave={onPeek && (() => onPeek(null, 0))}
-      className={cn("relative flex h-6 min-w-0 items-center gap-2 rounded-md pr-2 text-[11.5px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ac-brand", opens && "hover:bg-ac-raise")}
+      aria-current={currentChild === c.id ? "true" : undefined}
+      className={cn("relative flex h-6 min-w-0 items-center gap-2 rounded-md pr-2 text-[11.5px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ac-brand", currentChild === c.id ? "bg-ac-line font-medium text-ac-text" : opens && "hover:bg-ac-raise")}
       style={{ paddingLeft: 10 + depth * STEP }}
     >
+      {currentChild === c.id && <Marker />}
       <Guides depth={depth} rails={rails} last={last} stem={!!c.children?.length} />
       <ChildCells c={c} />
     </div>
@@ -504,7 +508,7 @@ export function ChildTree({ kids, parent, depth = 1, rails = [], ...h }: { kids:
   const idle = kids.filter((c) => !isLive(c));
   // Idle children start folded, even a single one; running ones are listed (owner, 2026-11-24).
   const fold = idle.length >= 1;
-  const shown = !fold || idleOpen || (!!h.focusKey && idle.some((c) => holds(c, h.focusKey!)));
+  const shown = !fold || idleOpen || (!!h.focusKey && idle.some((c) => holds(c, h.focusKey!))) || (!!h.currentChild && idle.some((c) => holds(c, h.currentChild!)));
   const items: (ChildModel | "fold")[] = [...live, ...(fold ? (["fold"] as const) : []), ...(shown ? idle : [])];
   return (
     <>
@@ -599,8 +603,11 @@ export function SessionRow({
   focusKey,
   age,
   onMenu,
+  currentChild,
 }: {
   onMenu?: (key: string, at: { x: number; y: number }) => void;
+  /** The child of this session shown in the workbench, if any. */
+  currentChild?: string | null;
   s: RowSession;
   active?: boolean;
   comfortable?: boolean;
@@ -701,7 +708,7 @@ export function SessionRow({
       </div>
       {kids && (
         <div className={cn(!block && "mb-1")}>
-          <ChildTree kids={s.children} parent={s.key} onSelect={onSelect} onSubagent={onSubagent} onBoard={onBoard} onPeek={onPeek} focusKey={focusKey} />
+          <ChildTree kids={s.children} parent={s.key} onSelect={onSelect} onSubagent={onSubagent} onBoard={onBoard} onPeek={onPeek} focusKey={focusKey} currentChild={currentChild} />
         </div>
       )}
     </div>
@@ -756,7 +763,10 @@ export function SessionsZone({
   pinned = true,
   card,
   onRowMenu,
+  currentChild,
 }: {
+  /** A subagent open in the workbench: its row is selected under its (active) session. */
+  currentChild?: string | null;
   /** Right-click on a row: its menu at the pointer (owner, 2026-11-25: open in a new tab, …). */
   onRowMenu?: (key: string, at: { x: number; y: number }) => void;
   /** The "Sessions N · Status" head; the window's tabs name the list instead (owner, 2026-11-25). */
@@ -936,6 +946,7 @@ export function SessionsZone({
             focusKey={focusKey}
             age={ageOf(s)}
             onMenu={onRowMenu}
+            currentChild={s.key === activeKey ? currentChild : null}
           />
           );
           // A card: one frame per session; the open one says so with the row's own marker, not a second frame.
