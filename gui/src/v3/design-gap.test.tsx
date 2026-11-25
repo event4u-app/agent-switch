@@ -165,7 +165,7 @@ describe("Sessions window header (spec §5)", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
-  it("⋯ offers select, density and pinned only; the zone head sorts and groups", () => {
+  it("⋯ offers select, density and pinned only; the list has no sort or group control", () => {
     const store = { load: vi.fn(() => null), save: vi.fn() };
     const d = data();
     render(
@@ -185,18 +185,14 @@ describe("Sessions window header (spec §5)", () => {
     expect(within(view()).getAllByRole("menuitem").map((b) => b.textContent)).toEqual(["Select", "DensityComfortable", "Show pinned only"]);
     fireEvent.click(screen.getByLabelText("Select · density · show pinned"));
     const win = screen.getByLabelText("Sessions window");
-    // Sort and group sit on the All tab's head (owner, 2026-11-25).
-    paneTab("All");
-    fireEvent.click(within(win).getByTitle("Sort and group"));
-    fireEvent.click(within(screen.getByRole("menu", { name: "Sort and group" })).getByText("Project / folder"));
-    expect(within(win).getByTitle("Sort and group").textContent).toBe("Project · Status");
-    expect(within(win).getByText("agent-switch")).toBeTruthy();
-    expect(within(win).getByText("shop")).toBeTruthy();
+    // Newest activity on top, always: no sort, no groups, nothing to fold (owner, 2026-11-25).
+    expect(within(win).queryByTitle("Sort and group")).toBeNull();
+    expect(within(win).queryByRole("button", { expanded: true })).toBeNull();
     fireEvent.click(within(view()).getByText("Show pinned only"));
     expect(within(win).queryByText("Event store")).toBeNull();
     expect(within(win).getByText("Checkout flow")).toBeTruthy();
     fireEvent.click(within(view()).getByText("Density"));
-    expect(store.save).toHaveBeenLastCalledWith(expect.objectContaining({ comfortable: false, group: "project", sort: "status", pinnedOnly: true }));
+    expect(store.save).toHaveBeenLastCalledWith(expect.objectContaining({ comfortable: false, pinnedOnly: true }));
     fireEvent.click(within(view()).getByText("Select"));
     expect(within(win).getAllByRole("checkbox").length).toBeGreaterThan(0);
   });

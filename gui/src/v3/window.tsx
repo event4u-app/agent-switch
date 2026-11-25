@@ -276,7 +276,7 @@ export function V3Window({
   const [pinnedOnly, setPinnedOnly] = useState(saved?.pinnedOnly ?? false);
   const [focusedNeed, setFocusedNeed] = useState<string | null>(null);
   // Opens on Running, as alternative B shows it (owner, 2026-11-25); ⌘J brings For you to the front.
-  const [paneTab, setPaneTab] = useState<"you" | "running" | "all">("running");
+  const [paneTab, setPaneTab] = useState<"you" | "running" | "other">("running");
   const [paneQuery, setPaneQuery] = useState("");
 
   const lastActiveOf = (k: string) => data.table.find((t) => t.key === k)?.lastActiveMs ?? null;
@@ -481,8 +481,9 @@ export function V3Window({
     if (focusedNeed) {
       holdNeedOpener();
       // ⌘J walks the For you items: that tab comes to the front first, then the item takes focus.
-      // An item about a child focuses the child's row in the tree instead, so the list stays (All when on For you).
-      const want = focusChild ? (paneTab === "you" ? "all" : paneTab) : "you";
+      // An item about a child focuses the child's row in the tree instead: the tab that lists its session.
+      const root = focusChild ? findChild(data.sessions, focusChild)?.root : undefined;
+      const want = focusChild ? (root && statusGroup(root) !== "Running" ? "other" : "running") : "you";
       if (paneTab !== want) return setPaneTab(want);
       if (!focusChild) [...document.querySelectorAll<HTMLElement>("[data-need]")].find((el) => el.dataset.need === focusedNeed)?.focus();
       return;
@@ -896,7 +897,7 @@ export function V3Window({
           options={[
             { value: "you", label: <>For you <PaneCount n={needs.length} tone={needs.length ? "warn" : undefined} /></> },
             { value: "running", label: <>Running <PaneCount n={liveSessions.filter((x) => statusGroup(x) === "Running").length} /></> },
-            { value: "all", label: <>All <PaneCount n={liveSessions.length} /></> },
+            { value: "other", label: <>Other <PaneCount n={liveSessions.filter((x) => statusGroup(x) !== "Running").length} /></> },
           ]}
         />
       </div>
@@ -905,17 +906,16 @@ export function V3Window({
           <NeedsZone full items={foundNeeds} away={data.away} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
         ) : (
         <SessionsZone
-          sessions={paneTab === "running" ? found.filter((x) => statusGroup(x) === "Running") : found}
+          // Running, or everything else (idle, waiting on you, …) under Other (owner, 2026-11-25).
+          sessions={found.filter((x) => (statusGroup(x) === "Running") === (paneTab === "running"))}
           activeKey={activeSession}
-          sort={sortBy}
-          group={paneTab === "running" ? "none" : groupBy}
-          head={paneTab === "all"}
-          onView={(y) => setOverlay((o) => (o && typeof o === "object" && "listView" in o ? null : { listView: y }))}
-          viewOpen={!!overlay && typeof overlay === "object" && "listView" in overlay}
+          sort="activity"
+          // No groups, nothing to fold, no sort menu: newest activity on top, always (owner, 2026-11-25).
+          group="none"
+          head={false}
           pinned={false}
-          card={paneTab === "running"}
+          card
           comfortable={comfortable}
-          
           lastActiveOf={lastActiveOf}
           nowMs={data.nowMs}
           onSubagent={openSubagent}

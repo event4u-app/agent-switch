@@ -100,10 +100,8 @@ async function mount({ engineRunning = true } = {}) {
 
 /** Idle starts folded (owner, 2026-11-24): open it to reach an idle session's row. Not counted as a user click. */
 function openIdle() {
-  // Idle sessions are listed on the All tab (owner, 2026-11-25); opening it was never a counted click.
-  fireEvent.click(screen.getByRole("radio", { name: /^All/ }));
-  const idle = within(screen.getByLabelText("Sessions window")).queryByRole("button", { expanded: false, name: /^Idle/ });
-  if (idle) fireEvent.click(idle);
+  // Idle sessions are listed on the Other tab (owner, 2026-11-25); opening it was never a counted click.
+  fireEvent.click(screen.getByRole("radio", { name: /^Other/ }));
 }
 
 let clicks = 0;

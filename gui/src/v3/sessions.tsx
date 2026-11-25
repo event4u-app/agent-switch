@@ -930,9 +930,9 @@ export function SessionsZone({
             age={ageOf(s)}
           />
           );
-          // A card: one frame per session, the open one framed in the accent.
+          // A card: one frame per session; the open one says so with the row's own marker, not a second frame.
           return card ? (
-            <div key={s.key} data-session-card="" className={cn("mb-1.5 rounded-md border p-0.5", s.key === activeKey ? "border-ac-brand-line" : "border-ac-line bg-ac-bg/40")}>
+            <div key={s.key} data-session-card="" className="mb-1.5 rounded-md border border-ac-line bg-ac-bg/40 p-0.5">
               {row}
             </div>
           ) : (

@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { V3Window, type V3Data } from "./window.js";
 import { data, slots } from "./window-fixture.js";
-import { paneTab } from "./pane-tabs.test-helper.js";
 import { ModelPopover } from "./workbench.js";
 
 afterEach(cleanup);
@@ -115,19 +114,6 @@ describe("⌘J from a focused terminal (8.6)", () => {
   });
 });
 
-describe("the sort menu names its real default (8.6)", () => {
-  it("Status carries the default hint, Activity none", () => {
-    mount();
-    paneTab("All");
-    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByTitle("Sort and group"));
-    const menu = screen.getByRole("menu", { name: "Sort and group" });
-    // "Status" twice: the sort, and the grouping (proposal B) — both are the defaults.
-    const [sortStatus, groupStatus] = within(menu).getAllByRole("menuitem", { name: /^Status/ });
-    expect(sortStatus.textContent).toMatch(/default/);
-    expect(groupStatus.textContent).toMatch(/default/);
-    expect(within(menu).getByRole("menuitem", { name: /^Activity/ }).textContent).not.toMatch(/default/);
-  });
-});
 
 describe("the All-sessions table follows the sidebar (8.6)", () => {
   it("lists the session that needs you first, as the sidebar does, though another was active later", () => {
