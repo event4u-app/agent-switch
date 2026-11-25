@@ -6,9 +6,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Swords, Users, Workflow as WorkflowIcon, X } from "lucide-react";
+import { ChevronDown, Swords, Users, Workflow as WorkflowIcon, X } from "lucide-react";
 
 import { cn } from "../../lib/utils.js";
+import { Anchored, Menu } from "../menus.js";
 import { ArenaBoard } from "./ArenaBoard.js";
 import { CouncilBoard } from "./CouncilBoard.js";
 import { WorkflowBoard } from "./WorkflowBoard.js";
@@ -27,6 +28,16 @@ export function boardTabs(o: Orchestration): { id: BoardTab; label: string; icon
   if (o.councilRunning) tabs.unshift({ id: "council:live", label: "Council · now", icon: "council", live: true });
   if (o.workflows.length) tabs.push({ id: "workflows", label: `Workflows (${o.workflows.length})`, icon: "workflows", live: o.workflows.some((w) => w.status === "running") });
   return tabs;
+}
+
+/**
+ * Which tabs the strip draws and which go behind "N finished ▾" (owner, 2026-11-25): like browser tabs, the
+ * strip keeps what still runs plus the one you look at; finished runs wait in the flyout. With nothing
+ * running, the strip keeps the chosen one only. Pure.
+ */
+export function splitTabs<T extends { id: BoardTab; live: boolean }>(tabs: readonly T[], current: BoardTab | null): { shown: T[]; finished: T[] } {
+  const shown = tabs.filter((t) => t.live || t.id === current);
+  return { shown, finished: tabs.filter((t) => !shown.includes(t)) };
 }
 
 /** The tab to show: the asked one when it exists, else the first. Pure. */
@@ -83,6 +94,7 @@ export function BoardPage({ sessionKey, title, live, focus, read, readLine, tran
   }, [sessionKey, read]);
 
   const tabs = data ? boardTabs(data) : [];
+  const [moreOpen, setMoreOpen] = useState(false);
   useEffect(() => {
     if (!data) return;
     setTab((cur) => (cur && tabs.some((t) => t.id === cur) ? cur : pickTab(tabs, focus)));
@@ -95,6 +107,7 @@ export function BoardPage({ sessionKey, title, live, focus, read, readLine, tran
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus]);
 
+  const split = splitTabs(tabs, tab);
   const onAgent = useCallback((id: string, t: string) => setAgent({ id, title: t }), []);
   const bracket = tab?.startsWith("arena:") ? data?.brackets.find((b) => `arena:${b.run}` === tab) : undefined;
   const council = tab?.startsWith("council:") && tab !== "council:live" ? (data?.councils.find((c) => `council:${c.name}` === tab) ?? null) : null;
@@ -110,17 +123,38 @@ export function BoardPage({ sessionKey, title, live, focus, read, readLine, tran
     <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-ac-bg">
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-ac-line px-3" role="tablist" aria-label={`Board of ${title}`}>
         <span className="mr-2 max-w-[220px] truncate text-[12px] text-ac-muted">{title}</span>
-        {tabs.map((t) => {
+        {split.shown.map((t) => {
           const Icon = ICON[t.icon];
           return (
-            <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={cn("inline-flex h-7 max-w-[240px] items-center gap-1.5 rounded-md px-2.5 text-[12px]", tab === t.id ? "bg-ac-raise font-medium text-ac-text" : "text-ac-soft hover:bg-ac-raise")}>
+            <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={cn("inline-flex h-7 min-w-0 max-w-[240px] items-center gap-1.5 rounded-md px-2.5 text-[12px]", tab === t.id ? "bg-ac-raise font-medium text-ac-text" : "text-ac-soft hover:bg-ac-raise")}>
               <Icon className="size-3.5 shrink-0" />
               <span className="truncate">{t.label}</span>
               {t.live && <span className="ab-pulse inline-block size-1.5 shrink-0 rounded-full bg-ac-brand" aria-label="live" />}
             </button>
           );
         })}
-        {error && data && <span className="ml-auto text-[11px] text-ac-warn-text">last read failed — showing the previous state</span>}
+        {split.finished.length > 0 && (
+          <div className="relative ml-auto shrink-0">
+            <button type="button" data-popover-trigger="" aria-expanded={moreOpen} aria-haspopup="menu" onClick={() => setMoreOpen((o) => !o)} className={cn("inline-flex h-7 items-center gap-1 rounded-md px-2 text-[12px] text-ac-soft hover:bg-ac-raise hover:text-ac-text", moreOpen && "bg-ac-raise text-ac-text")}>
+              {split.finished.length} finished
+              <ChevronDown className={cn("size-3.5 transition-transform", moreOpen && "rotate-180")} />
+            </button>
+            {moreOpen && (
+              <Anchored onClose={() => setMoreOpen(false)} className="absolute right-0 top-[calc(100%+4px)] z-20">
+                <Menu
+                  label="Finished runs"
+                  width={300}
+                  autoFocus
+                  items={split.finished.map((t) => {
+                    const Icon = ICON[t.icon];
+                    return { id: t.id, label: t.label, icon: <Icon />, onClick: () => (setTab(t.id), setMoreOpen(false)) };
+                  })}
+                />
+              </Anchored>
+            )}
+          </div>
+        )}
+        {error && data && <span className={cn("shrink-0 text-[11px] text-ac-warn-text", split.finished.length ? "ml-2" : "ml-auto")}>last read failed — showing the previous state</span>}
       </div>
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1">{body}</div>

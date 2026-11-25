@@ -310,3 +310,19 @@ describe("live council table", () => {
     expect((screen.getByLabelText(/Say something to the table/) as HTMLTextAreaElement).value).toBe("late");
   });
 });
+
+describe("splitTabs", () => {
+  it("keeps running tabs and the chosen one in the strip; the rest are finished", async () => {
+    const { splitTabs } = await import("./BoardPage.js");
+    const tabs = [
+      { id: "arena:a" as const, live: true },
+      { id: "council:b" as const, live: false },
+      { id: "council:c" as const, live: false },
+      { id: "workflows" as const, live: false },
+    ];
+    const s = splitTabs(tabs, "council:c");
+    expect(s.shown.map((t) => t.id)).toEqual(["arena:a", "council:c"]);
+    expect(s.finished.map((t) => t.id)).toEqual(["council:b", "workflows"]);
+    expect(splitTabs(tabs, null).finished).toHaveLength(3);
+  });
+});
