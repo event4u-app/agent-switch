@@ -873,7 +873,8 @@ export function SessionsZone({
         )}
       </div>}
       {selection && <BatchBar compact count={selection.size} actions={batch} className="mx-1.5 mb-1" />}
-      <div className="px-1.5" data-session-list {...holdBind}>
+      {/* Cards line up with the tabs over them and the filter under them (owner, 2026-11-25): the same 10 px inset. */}
+      <div className={card ? "px-2.5" : "px-1.5"} data-session-list {...holdBind}>
         {live.length === 0 && !loading && (
           <p className="px-2 py-1.5 text-[12px] text-ac-muted">
             No sessions running.{" "}
