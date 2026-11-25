@@ -275,7 +275,7 @@ export function V3Window({
   const [tableGroup, setTableGroup] = useState<"none" | "project" | undefined>(saved?.tableGroup);
   const [pinnedOnly, setPinnedOnly] = useState(saved?.pinnedOnly ?? false);
   const [focusedNeed, setFocusedNeed] = useState<string | null>(null);
-  // Opens on Running, as alternative B shows it (owner, 2026-11-25); ⌘J brings For you to the front.
+  // Opens on Running, as alternative B shows it (owner, 2026-11-25); ⌘J brings Needs you to the front.
   const [paneTab, setPaneTab] = useState<"you" | "running" | "other">("running");
   const [paneQuery, setPaneQuery] = useState("");
 
@@ -489,7 +489,7 @@ export function V3Window({
     const now = document.activeElement as HTMLElement | null;
     if (focusedNeed) {
       holdNeedOpener();
-      // ⌘J walks the For you items: that tab comes to the front first, then the item takes focus.
+      // ⌘J walks the Needs you items: that tab comes to the front first, then the item takes focus.
       // An item about a child focuses the child's row in the tree instead: the tab that lists its session.
       const root = focusChild ? findChild(data.sessions, focusChild)?.root : undefined;
       const want = focusChild ? (root && statusGroup(root) !== "Running" ? "other" : "running") : "you";
@@ -894,17 +894,18 @@ export function V3Window({
           </IconButton>
         </span>
       </div>
-      {/* Alternative B (owner, 2026-11-25): three tabs instead of stacked zones — For you, Running, All —
+      {/* Alternative B (owner, 2026-11-25): three tabs instead of stacked zones — Needs you, Running, Other —
           one list at a time; the search from alternative A sits at the foot, over Done today and Older. */}
       <div className="shrink-0 px-2.5 pt-2" data-pane-tabs="">
         <Segmented
           label="Show"
           size="sm"
           fill
+          dense
           value={paneTab}
           onChange={setPaneTab}
           options={[
-            { value: "you", label: <>For you <PaneCount n={needs.length} tone={needs.length ? "warn" : undefined} /></> },
+            { value: "you", label: <>Needs you <PaneCount n={needs.length} tone={needs.length ? "warn" : undefined} /></> },
             { value: "running", label: <>Running <PaneCount n={liveSessions.filter((x) => statusGroup(x) === "Running").length} /></> },
             { value: "other", label: <>Other <PaneCount n={liveSessions.filter((x) => statusGroup(x) !== "Running").length} /></> },
           ]}
@@ -1163,5 +1164,5 @@ export function V3Window({
 
 /** A tab's or button's count, the pill the stripe and groups use. */
 function PaneCount({ n, tone }: { n: number; tone?: "warn" }) {
-  return <span className={cn("ml-1.5 inline-flex h-4 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-normal tabular-nums leading-none", tone === "warn" ? "bg-ac-warn-tint text-ac-warn-text" : "bg-ac-line text-ac-soft")}>{n}</span>;
+  return <span className={cn("ml-1 inline-flex h-4 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-normal tabular-nums leading-none", tone === "warn" ? "bg-ac-warn-tint text-ac-warn-text" : "bg-ac-line text-ac-soft")}>{n}</span>;
 }

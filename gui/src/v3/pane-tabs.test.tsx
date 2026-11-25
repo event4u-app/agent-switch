@@ -1,5 +1,5 @@
 /**
- * The Sessions window, alternative B (owner, 2026-11-25): three tabs — For you, Running, All —
+ * The Sessions window, alternative B (owner, 2026-11-25): three tabs — Needs you, Running, All —
  * one list at a time, and alternative A's filter at the foot over Done today and Older.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -28,7 +28,7 @@ describe("the Sessions window's tabs", () => {
   it("opens on Running; Other holds the rest; each tab counts what it lists, ended sessions stay out", () => {
     const win = mount();
     const tabs = win.getAllByRole("radio").map((r) => r.textContent);
-    expect(tabs[0]).toMatch(/^For you\s*\d+$/);
+    expect(tabs[0]).toMatch(/^Needs you\s*\d+$/);
     expect(tabs.slice(1)).toEqual(["Running 1", "Other 1"]);
     expect(win.getByRole("radio", { name: /^Running/ }).getAttribute("aria-checked")).toBe("true");
     expect(win.getByText("Event store")).toBeTruthy();
@@ -56,9 +56,9 @@ describe("the Sessions window's tabs", () => {
     expect(win.queryByRole("button", { expanded: true })).toBeNull();
   });
 
-  it("For you lists every item, with no N more", () => {
+  it("Needs you lists every item, with no N more", () => {
     const win = mount();
-    paneTab("For you");
+    paneTab("Needs you");
     expect(win.getByText("94% of 5h")).toBeTruthy();
     expect(win.queryByText(/more ›/)).toBeNull();
   });

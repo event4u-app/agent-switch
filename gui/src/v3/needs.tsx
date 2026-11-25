@@ -98,7 +98,7 @@ export function NeedsZone({
   always,
   full,
 }: {
-  /** The window's "For you" tab (owner, 2026-11-25): every item, no head (the tab names it), no "N more". */
+  /** The window's "Needs you" tab (owner, 2026-11-25): every item, no head (the tab names it), no "N more". */
   full?: boolean;
   /** Whether an approval can be answered "always" here (its chat runs in this window); all when absent. */
   always?: (n: NeedItem) => boolean;

@@ -115,7 +115,7 @@ afterEach(() => {
 describe("V3App on fixture CLI output (spec §11)", () => {
   it("Overview: the needs item and the running session come from the CLI", async () => {
     await mount();
-    fireEvent.click(await screen.findByRole("radio", { name: /^For you/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /^Needs you/ }));
     expect(await screen.findByText("94% of 5h")).toBeTruthy();
     openIdle();
     expect(within(screen.getByLabelText("Sessions window")).getByText("Event store")).toBeTruthy();
@@ -142,7 +142,7 @@ describe("V3App on fixture CLI output (spec §11)", () => {
   it("Near-limit decision: Decide opens the sheet and changes nothing", async () => {
     await mount();
     const before = calls.length;
-    click(await screen.findByRole("radio", { name: /^For you/ }));
+    click(await screen.findByRole("radio", { name: /^Needs you/ }));
     click(await screen.findByText("Decide"));
     expect(await screen.findByText(/Nothing changes until you choose/)).toBeTruthy();
     // Nothing moves or switches until a choice is made. Background engines (the
@@ -175,7 +175,7 @@ describe("V3App on fixture CLI output (spec §11)", () => {
 
   it("Health: a running engine does not", async () => {
     await mount();
-    fireEvent.click(await screen.findByRole("radio", { name: /^For you/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /^Needs you/ }));
     await screen.findByText("94% of 5h");
     expect(screen.queryByText("Engine stopped")).toBeNull();
   });

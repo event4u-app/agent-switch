@@ -24,11 +24,11 @@ describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
   it("Overview: needs you, running now, what's left — on screen", () => {
     const w = open();
     // One list at a time (owner, 2026-11-25): what needs you is counted on its tab, what runs is listed.
-    expect(screen.getByRole("radio", { name: /^For you\s*\d/ })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /^Needs you\s*\d/ })).toBeTruthy();
     expect(within(screen.getByLabelText("Sessions window")).getByText("Event store")).toBeTruthy();
     expect(screen.getByText("Limits")).toBeTruthy();
     expect(w.clicks()).toBe(0);
-    w.click(screen.getByRole("radio", { name: /^For you/ }));
+    w.click(screen.getByRole("radio", { name: /^Needs you/ }));
     expect(screen.getByText("94% of 5h")).toBeTruthy();
     expect(w.clicks()).toBe(1);
   });
@@ -58,7 +58,7 @@ describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
     // Deciding answers through the engine, so it runs while the engine is up.
     const w = open({ health: { state: "ready" } });
     expect(screen.queryByText("Nothing changes until you choose.", { exact: false })).toBeNull();
-    w.click(screen.getByRole("radio", { name: /^For you/ }));
+    w.click(screen.getByRole("radio", { name: /^Needs you/ }));
     w.click(screen.getByText("Decide"));
     expect(screen.getByText(/Nothing changes until you choose/)).toBeTruthy();
     expect(w.act).not.toHaveBeenCalled();
@@ -100,7 +100,7 @@ describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
 
   it("Tools, agent-config card, updates — Tools page; the update is a Needs-you item", () => {
     const w = open();
-    w.click(screen.getByRole("radio", { name: /^For you/ }));
+    w.click(screen.getByRole("radio", { name: /^Needs you/ }));
     expect(screen.getByText("0.1 → 0.2")).toBeTruthy();
     w.click(stripe("Tools"));
     expect(screen.getByText("agent-config card")).toBeTruthy();

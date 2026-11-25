@@ -16,6 +16,7 @@ export function Segmented<V extends string>({
   onChange,
   options,
   fill,
+  dense,
   size = "md",
 }: {
   label: string;
@@ -23,6 +24,8 @@ export function Segmented<V extends string>({
   onChange: (value: V) => void;
   options: SegmentedOption<V>[];
   fill?: boolean;
+  /** Options sized by their words (no equal thirds), tighter padding. */
+  dense?: boolean;
   size?: "sm" | "md";
 }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -72,8 +75,10 @@ export function Segmented<V extends string>({
             onClick={() => !o.disabled && onChange(o.value)}
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
-              "inline-flex h-full items-center justify-center whitespace-nowrap rounded-md px-3 text-xs font-medium transition-colors",
-              fill && "flex-1",
+              "inline-flex h-full items-center justify-center whitespace-nowrap rounded-md text-xs font-medium transition-colors",
+              // Dense: each option as wide as its words, the rest shared (labels with counts in a narrow pane).
+              dense ? "min-w-0 flex-auto px-2" : "px-3",
+              fill && !dense && "flex-1",
               selected
                 ? "bg-ac-raise text-ac-text"
                 : o.disabled
