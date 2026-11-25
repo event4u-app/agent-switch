@@ -22,7 +22,7 @@ import { MenuSection, POPOVER_TRIGGER } from "./menus.js";
 // ---------- tab strip ----------
 
 /** Tab: rounded top corners; the active one is framed with a 2 px accent top edge and joins the content below (spec §3.2). */
-export const TAB = "relative -mb-px flex h-[33px] items-center gap-2 rounded-t-md border-x border-t-2 px-3 text-xs";
+export const TAB = "relative flex h-[33px] min-w-0 items-center gap-2 rounded-t-md border-x border-t-2 px-3 text-xs";
 export const TAB_ON = "border-ac-line border-t-ac-brand bg-ac-bg text-ac-text";
 
 export type TabItem = { kind: "page"; id: string; label: string; icon: ReactNode } | { kind: "session"; id: string; title: string; state: SessionState };
@@ -85,6 +85,11 @@ export function TabStrip({
   };
   const stripRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    // The open tab stays in view when the strip has scrolled.
+    const el = Array.from(stripRef.current?.querySelectorAll<HTMLElement>("[data-tab-id]") ?? []).find((x) => x.dataset.tabId === activeId);
+    el?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [activeId]);
+  useEffect(() => {
     // After a keyboard close the closed tab is gone; its neighbour keeps the focus.
     const id = refocus.current;
     if (!id || !has(id)) return;
@@ -99,7 +104,10 @@ export function TabStrip({
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusId(null);
       }}
-      className={cn("flex h-9 shrink-0 items-end gap-px border-b border-ac-line bg-ac-rail px-1", drag?.moving && "cursor-grabbing select-none")}>
+      // Like browser tabs (owner, 2026-11-25): tabs shrink first, then the strip scrolls sideways;
+      // it never runs past the window or under the right stripe. The base line is an inset shadow, so
+      // the clipped strip still lets the open tab cover it.
+      className={cn("flex h-9 min-w-0 shrink-0 items-end gap-px overflow-x-auto overflow-y-hidden bg-ac-rail px-1 shadow-[inset_0_-1px_0_var(--ac-line)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", drag?.moving && "cursor-grabbing select-none")}>
       {ordered.map((t) => {
         const on = t.id === activeId;
         const pin = isPin(t.id);
@@ -163,7 +171,7 @@ export function TabStrip({
             title={`${name}${t.kind === "session" && idx <= 9 ? ` · ⌘${idx}` : ""}${pin ? " · pinned" : ""}`}
             className={cn(
               TAB,
-              t.kind === "session" ? "group min-w-[140px] max-w-[220px] shrink" : "shrink-0",
+              t.kind === "session" ? "group min-w-[120px] max-w-[220px] shrink" : "min-w-[120px] max-w-[300px] shrink",
               on ? TAB_ON : pin ? "border-transparent bg-ac-brand-tint text-ac-soft hover:text-ac-text" : "border-transparent text-ac-muted hover:bg-ac-raise hover:text-ac-text",
               on && pin && "bg-ac-brand-tint",
               drag?.moving && drag.id === t.id && "opacity-50",
