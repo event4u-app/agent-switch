@@ -72,11 +72,12 @@ export function NeedRow({ n, top, focused, always = true, onVerb }: { n: NeedIte
         <span className="min-w-0 flex-1 truncate text-[12.5px]">
           <span className="text-ac-text">{n.who}</span> <span className="text-ac-muted">{n.what}</span>
         </span>
-        <span className={cn("rounded-md", focused && "ring-2 ring-ac-brand ring-offset-2 ring-offset-[var(--ac-raise)]")}>
-          <Act kind={open ? "accent" : "ghost"} onClick={() => onVerb(n)}>
-            {n.verb}
-          </Act>
-        </span>
+        {/* One frame, the row's own height (owner, 2026-11-25): no focus ring around the outlined button, which
+            read as a double frame and, at 28 px in a 24 px line, sat too high. The focused row says itself
+            (marker, fill, key hints); its button takes the accent tint. */}
+        <Act kind={open ? "accent" : "ghost"} className={cn("h-6", focused && "bg-ac-brand-tint")} onClick={() => onVerb(n)}>
+          {n.verb}
+        </Act>
       </div>
       {open && n.detail && <div className="truncate pl-[22px] font-ac-mono text-[11px] text-ac-muted">{n.detail}</div>}
       {focused && <div className="mt-0.5 pl-[22px] text-[10.5px] text-ac-muted">{keysFor(n, always)}</div>}
