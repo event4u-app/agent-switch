@@ -20,7 +20,7 @@ const LOOK: Record<SessionState, { color: string; shape: "dot" | "ring" | "targe
   done: { color: "text-ac-faint", shape: "dot" },
 };
 
-export type StateSource = "hook" | "host" | "program" | "transcript";
+export type StateSource = "hook" | "host" | "program" | "transcript" | "children";
 
 /** Who reported a state, for the dot's tooltip (spec §3.3). */
 export const STATE_SOURCE_TEXT: Record<StateSource, string> = {
@@ -28,6 +28,7 @@ export const STATE_SOURCE_TEXT: Record<StateSource, string> = {
   host: "from Claude Code",
   program: "from Codex",
   transcript: "from the transcript time",
+  children: "from the agents running under it",
 };
 
 /**

@@ -259,6 +259,14 @@ export function boardChildren(r: SessionRow): ChildModel[] {
   return out;
 }
 
+/**
+ * Work still running under a session: a working child, except a board row
+ * itself — a bracket or council can be attached because the transcript names
+ * it, so only the runs under it count. Pure.
+ */
+export const workRunsUnder = (cs: readonly ChildModel[]): boolean =>
+  cs.some((c) => (c.state === "working" && c.kind !== "arena-board" && c.kind !== "council-board") || workRunsUnder(c.children ?? []));
+
 /** Summary's "Children" fact: the Children window's noun and count, or "none". Pure. */
 const childSummary = (children: ChildModel[]) => (children.length ? childNoun({ children }) : "none");
 
@@ -495,8 +503,10 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
   const sessions: RowSession[] = roots.map((r) => {
     const key = sessionKey(r);
     const pr = prsOf(r)[0];
-    const view = sessionFromRow(r, now);
+    const own = sessionFromRow(r, now);
     const children = childrenOf(r, (k) => byKey.get(k), childCtx);
+    // A turn that ended after starting a background workflow or agents reads idle, and its transcript goes quiet while they work.
+    const view = r.live && own.state === "idle" && workRunsUnder(children) ? { ...own, state: "working" as const, stateSource: "children" as const } : own;
     const needsYou = needing.has(key) || children.some((c) => c.needsYou);
     const when = whenOf(r, view.state, needsYou);
     return {

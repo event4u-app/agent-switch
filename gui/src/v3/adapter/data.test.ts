@@ -4,6 +4,7 @@ import type { SessionRow } from "../../transforms.js";
 import { emptyViewModel } from "../../vm/load.js";
 import type { Account, ViewModel } from "../../vm/types.js";
 import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
+import { statusGroup } from "../sessions.js";
 import { chatStart, childrenOf, decisionFor, doneToday, hasOpenPr, initialPlan, nextStep, sessionKey, startCommand, startKey, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
 import { emptyFeeds, type V3Feeds } from "./useFeeds.js";
 
@@ -113,6 +114,29 @@ describe("toV3Data", () => {
     const d = toV3Data(vmWith([account("work")], rows), emptyFeeds(), env());
     const done = (id: string) => d.sessions.find((s) => s.key === `claude/work/${id}`)?.doneToday ?? false;
     expect([done("recent"), done("done"), done("live")]).toEqual([false, true, false]);
+  });
+
+  it("a live session whose own turn is idle stays Running while its workflow or arena runs under it", () => {
+    const idle = { runtime: { state: "idle" as const, source: "host" as const, observedAt: NOW - 20 * 60_000 }, mtimeMs: NOW - 20 * 60_000 };
+    const wf = (status: string) => ({ runId: "wf_1", name: "arena-lines", status, done: 3, total: 10, phase: "Generate" });
+    const rows = [
+      row("wf", { ...idle, workflows: [wf("running")] }),
+      row("arena", { ...idle, brackets: [{ run: "arena", round: 1, phase: "judging", alive: 5, total: 10, champion: null }], workflows: [wf("running")] }),
+      row("ended", { ...idle, workflows: [wf("completed")] }),
+      // A bracket attached because the transcript names it carries no run of this session: no work runs here.
+      row("named", { ...idle, brackets: [{ run: "other", round: 1, phase: "judging", alive: 5, total: 10, champion: null }] }),
+      row("dead", { ...idle, live: false, workflows: [wf("running")] }),
+    ];
+    const d = toV3Data(vmWith([account("work")], rows), emptyFeeds(), env());
+    const of = (id: string) => d.sessions.find((s) => s.key === `claude/work/${id}`)!;
+    expect(["wf", "arena", "ended", "named"].map((id) => [of(id).state, statusGroup(of(id)), !!of(id).doneToday])).toEqual([
+      ["working", "Running", false],
+      ["working", "Running", false],
+      ["idle", "Idle", true],
+      ["idle", "Idle", true],
+    ]);
+    expect(of("wf").stateSource).toBe("children");
+    expect(of("dead").state).not.toBe("working");
   });
 
   it("a session quiet for the done-after time moves to Done today; one quiet for over a day moves to Older; one that needs you stays", () => {
