@@ -70,7 +70,8 @@ function fixture(engineRunning: boolean) {
     "needs --json": {
       items: [{ id: "l", kind: "limit", subject: "claude/work", who: "work", what: "94% of 5h", verb: "Decide", since: new Date(NOW).toISOString(), version: "1" }],
       away: null,
-      history: [{ id: "h", kind: "ask", who: "Checkout flow", what: "asked you", doneAt: new Date(NOW - 600_000).toISOString() }],
+      // Never before local midnight: in the first ten minutes of a day, NOW - 10 min is yesterday and not "earlier today".
+      history: [{ id: "h", kind: "ask", who: "Checkout flow", what: "asked you", doneAt: new Date(Math.max(NOW - 600_000, new Date(NOW).setHours(0, 0, 0, 0))).toISOString() }],
     },
     "engine status --json": engineRunning
       ? { running: true, address: "/tmp/engine.sock", protocol: 1, pid: 1, driver: "node:sqlite", hostedRunning: 0 }
