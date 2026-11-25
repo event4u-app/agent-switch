@@ -5,7 +5,7 @@
  * run in tmux and are counted here so the banner can say they keep running.
  */
 
-import { callEngine } from "../engine/client.js";
+import { helloEngine } from "../engine/client.js";
 import { engineAddress } from "../protocol/messages.js";
 import { die, ROOT } from "../profiles.js";
 import { serviceCli, serviceInstall, serviceRestart, serviceTarget } from "../service.js";
@@ -34,17 +34,13 @@ export function downReason(service: ServiceOwner, socketError: string, otherCli:
   return socketError;
 }
 
-export async function engineStatus(timeoutMs = 800): Promise<EngineStatus> {
+export async function engineStatus(timeoutMs = 800, retryMs = 3000): Promise<EngineStatus> {
   const address = engineAddress(ROOT);
   const service = serviceTarget();
   const hostedRunning = TmuxHost.available() ? new TmuxHost(ROOT).list().filter((s) => s.alive).length : 0;
   try {
-    const [r] = await callEngine(address, [{ op: "hello" }], timeoutMs);
-    if (r.ok) {
-      const h = r.result as { protocol: number; pid: number; driver: string };
-      return { running: true, address, protocol: h.protocol, pid: h.pid, driver: h.driver, hostedRunning, service };
-    }
-    return { running: false, address, reason: downReason(service, r.error.message, serviceCli()), hostedRunning, service };
+    const h = (await helloEngine(address, timeoutMs, retryMs)) as { protocol: number; pid: number; driver: string };
+    return { running: true, address, protocol: h.protocol, pid: h.pid, driver: h.driver, hostedRunning, service };
   } catch (err: any) {
     return { running: false, address, reason: downReason(service, String(err?.message ?? err), serviceCli()), hostedRunning, service };
   }
@@ -79,12 +75,14 @@ export async function cmdEngine(sub: string | undefined, flags: Record<string, s
     : `Engine stopped: ${s.reason}.${s.hostedRunning ? ` ${s.hostedRunning} hosted session(s) keep running in tmux.` : ""} ${s.service === "other-cli" ? "Move the service here with" : "Start it with"}: agent-switch engine restart`);
 }
 
+/** Polls with single asks: the loop is its own retry, and a long second ask
+ *  would run past `ms`. */
 async function waitForEngine(ms: number): Promise<EngineStatus> {
   const end = Date.now() + ms;
-  let s = await engineStatus();
+  let s = await engineStatus(800, 0);
   while (!s.running && Date.now() < end) {
     await new Promise((r) => setTimeout(r, 250));
-    s = await engineStatus();
+    s = await engineStatus(Math.max(100, Math.min(800, end - Date.now())), 0);
   }
   return s;
 }
