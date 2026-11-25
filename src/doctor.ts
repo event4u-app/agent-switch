@@ -21,6 +21,8 @@ import { checkAuth, liveSessionPids, type AuthState } from "./api.js";
 import { checkTooling, doctorToolingLine } from "./tooling.js";
 import { readGuiSettings, type GuiSettings } from "./gui-settings.js";
 import { agyKeychainState, type AgyKeychainState } from "./agy-keychain.js";
+import { buildFreshness, buildFreshnessCheck, checkoutOf } from "./build-freshness.js";
+import { readDaemonState } from "./daemon.js";
 
 export type CheckStatus = "ok" | "warn" | "error" | "info";
 
@@ -387,6 +389,13 @@ export async function collectDoctorReport(): Promise<DoctorReport> {
     checks.push({ id: `tooling-${t.id}`, status: t.healthy ? "ok" : "warn", title: doctorToolingLine(t), detail: "" });
   }
   checks.push(agentConfigLinkCheck(readLinkAutoConnect(), tooling.some((t) => t.id === "agent-config" && t.present)));
+
+  // A dev checkout: does it, and the engine, run the code it holds?
+  const checkout = process.argv[1] ? checkoutOf(process.argv[1]) : null;
+  if (checkout) {
+    const eb = readDaemonState()?.engineBuild;
+    checks.push(buildFreshnessCheck(buildFreshness(checkout, eb && eb.checkout === checkout ? eb.builtAt : null)));
+  }
 
   const readiness = checks.some((c) => c.status === "error") ? "blocked" : checks.some((c) => c.status === "warn") ? "attention" : "ready";
   return { schema: 1, readiness, platform: process.platform, checks };

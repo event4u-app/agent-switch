@@ -74,6 +74,7 @@ import { candidatesFor } from "./link/candidates.js";
 import { projectedAtReset } from "./link/pace.js";
 import { raiseAsks } from "./link/raise.js";
 import { FRESH_USAGE_MS } from "./dir-resolve.js";
+import { builtAt, checkoutOf } from "./build-freshness.js";
 
 export interface NotifyDeps {
   osOn: () => boolean;
@@ -181,6 +182,8 @@ export interface DaemonState {
   /** `codex/<name>` → the reset cycle a credit was auto-redeemed in (opt-in
    *  auto-reset). Persisted so a restart cannot redeem the same cycle twice. */
   autoRedeemed?: Record<string, string>;
+  /** The checkout this daemon runs from and its `dist/` build time at start; absent for an installed package. */
+  engineBuild?: { checkout: string; builtAt: number } | null;
 }
 
 // ---------- state file (the cache) ----------
@@ -1069,6 +1072,9 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
   };
   // Load persisted usage-window fired state so crossings do NOT re-fire after a
   // daemon restart within the same window cycle (the pre-existing in-memory gap).
+  const checkout = process.argv[1] ? checkoutOf(process.argv[1]) : null;
+  const built = checkout ? builtAt(checkout) : null;
+  state.engineBuild = checkout && built !== null ? { checkout, builtAt: built } : null;
   const thresholds = new Map<string, ThresholdState>(Object.entries(state.usageThresholds ?? {}));
   // `<provider>/<name>` → the window resets_at we last announced a banked reset
   // for, so the "reset available" notice fires once per cycle, not every poll.
