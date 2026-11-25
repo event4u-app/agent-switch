@@ -145,6 +145,22 @@ describe("tabs: pin, close, reopen, sort (owner request 2026-11-05)", () => {
     expect(screen.getByRole("menuitem", { name: "Move left" }).getAttribute("aria-disabled")).toBe("true");
   });
 
+  it("stripe pages open in the main tab; ⌘-click, middle click or the right-click menu give them a tab of their own", () => {
+    mount();
+    const stripe = within(screen.getByRole("navigation", { name: "Tool windows" }));
+    fireEvent.click(stripe.getByLabelText(/^Arenas/));
+    expect(titles()).toEqual(["Arenas", "Checkout flow", "Themes"]);
+    expect(tab("Arenas").getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(stripe.getByLabelText(/^Tools/), { metaKey: true });
+    expect(titles()).toEqual(["Arenas", "Tools", "Checkout flow", "Themes"]);
+    fireEvent.contextMenu(stripe.getByLabelText(/^Library/), { clientX: 20, clientY: 200 });
+    pick("Open in new tab");
+    expect(titles()).toEqual(["Arenas", "Tools", "Library", "Checkout flow", "Themes"]);
+    // Settings opens in the main tab too.
+    fireEvent.click(screen.getByLabelText(/^Settings/));
+    expect(titles()[0]).toBe("Settings");
+  });
+
   it("a session row opens in a pinned tab from its right-click menu", () => {
     mount({ tabs: ["s1"], active: "s1" });
     fireEvent.contextMenu(within(screen.getByLabelText("Sessions window")).getAllByText("Themes")[0]);

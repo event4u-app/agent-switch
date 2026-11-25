@@ -254,7 +254,7 @@ export function V3Window({
   const pages = strip.order.filter(isPageTab).map((id) => id.slice(5) as Page);
   const sessionTabs = strip.order.filter((id) => !isPageTab(id));
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "history" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string; at?: Anchor; moved?: BarChipId[] } | { end: string } | { openin: string; at?: Anchor } | { tabMenu: string; x: number; y: number } | { rowMenu: string; x: number; y: number }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "history" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string; at?: Anchor; moved?: BarChipId[] } | { end: string } | { openin: string; at?: Anchor } | { tabMenu: string; x: number; y: number } | { rowMenu: string; x: number; y: number } | { pageMenu: string; x: number; y: number }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
@@ -296,12 +296,15 @@ export function V3Window({
   };
   useEffect(() => () => void (peekTimer.current && clearTimeout(peekTimer.current)), []);
 
-  const openPage = useCallback((p: Page) => {
-    setStrip((cur) => openTab(cur, `page:${p}`));
-    setActive(`page:${p}`);
+  // Pages open in the main tab too (owner, 2026-11-26): Arenas, Settings, a review…; a page already open goes
+  // to its tab. A tab of its own only when asked: ⌘/Ctrl-click, middle click, or the right-click menu.
+  const openPage = useCallback((p: Page, newTab = false) => {
+    const id = `page:${p}`;
+    setStrip((cur) => (newTab ? openTab(cur, id) : openInDefault(cur, id).state));
+    setActive(id);
   }, []);
   // Done today and Older in the stripe open All sessions on that tab (owner, 2026-11-25).
-  const frame = useFrame((p) => (p === ("done-today" as PageId) || p === ("older" as PageId) ? (setTableTab((t) => ({ status: p === ("older" as PageId) ? "older" : "today", n: t.n + 1 })), openPage("sessions-table")) : openPage(p)));
+  const frame = useFrame((p, newTab) => (p === ("done-today" as PageId) || p === ("older" as PageId) ? (setTableTab((t) => ({ status: p === ("older" as PageId) ? "older" : "today", n: t.n + 1 })), openPage("sessions-table", newTab)) : openPage(p, newTab)));
   /** The tab All sessions opens on, and a counter that remounts it when Done today or Older asks again. */
   const [tableTab, setTableTab] = useState<{ status: StatusTab; n: number }>({ status: "all", n: 0 });
   /** The session's Review tab, at `file` when one was picked; every open is new, so the review goes back to Uncommitted. */
@@ -1149,6 +1152,29 @@ export function V3Window({
           ]}
         />
       </Anchored>
+    ) : overlay && typeof overlay === "object" && "pageMenu" in overlay ? (
+      // Right-click on a stripe page button or Settings (owner, 2026-11-26): open it in the main tab, or a tab of its own.
+      <Anchored onClose={close} className="absolute z-20" style={{ left: overlay.x, top: overlay.y }}>
+        <Menu
+          label="Page"
+          width={240}
+          items={[
+            { id: "open", label: "Open", onClick: () => (close(), frame.selectLeft(overlay.pageMenu)) },
+            { id: "open-new", label: "Open in new tab", icon: <Plus />, onClick: () => (close(), frame.selectLeft(overlay.pageMenu, true)) },
+            {
+              id: "open-pinned",
+              label: "Open in pinned tab",
+              icon: <Pin />,
+              onClick: () => {
+                close();
+                frame.selectLeft(overlay.pageMenu, true);
+                const p = overlay.pageMenu === "done-today" || overlay.pageMenu === "older" ? "sessions-table" : overlay.pageMenu;
+                setStrip((s) => pinTab(s, `page:${p}`));
+              },
+            },
+          ]}
+        />
+      </Anchored>
     ) : overlay && typeof overlay === "object" && "tabMenu" in overlay ? (
       <Anchored onClose={close} className="absolute z-20" style={{ left: overlay.x, top: overlay.y }}>
         <Menu label="Tab" width={260} items={tabMenuItems(overlay.tabMenu)} />
@@ -1180,6 +1206,7 @@ export function V3Window({
       historyOpen={overlay === "history"}
       running={runningCounts(runs)}
       activePage={active?.startsWith("page:") ? active.slice(5) : null}
+      onPageMenu={(id, at) => setOverlay({ pageMenu: id, ...shellPoint(at) })}
       needsYou={needs.length > 0}
       blocker={!!next}
       rightWhy={activeSession ? null : "no session in this tab"}
@@ -1194,7 +1221,7 @@ export function V3Window({
           </div>
         ))
       }
-      actions={{ onSearch: () => setOverlay("palette"), onStart: () => setOverlay("new"), onSettings: () => openPage("settings"), onInbox: () => setOverlay((o) => (o === "inbox" ? null : "inbox")), onHistory: () => setOverlay((o) => (o === "history" ? null : "history")), onRestart: () => act({ type: "restart-engine" }) }}
+      actions={{ onSearch: () => setOverlay("palette"), onStart: () => setOverlay("new"), onSettings: (newTab) => openPage("settings", newTab), onInbox: () => setOverlay((o) => (o === "inbox" ? null : "inbox")), onHistory: () => setOverlay((o) => (o === "history" ? null : "history")), onRestart: () => act({ type: "restart-engine" }) }}
     />
   );
 }

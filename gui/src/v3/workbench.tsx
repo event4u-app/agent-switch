@@ -181,7 +181,7 @@ export function TabStrip({
             title={`${name}${t.kind === "session" && idx && idx <= 9 ? ` · ⌘${idx}` : ""}${pin ? " · pinned" : ""}${isMain ? " · main tab: everything opens here" : ""}`}
             className={cn(
               TAB,
-              pin ? "shrink-0 justify-center gap-1.5 px-2.5" : isMain ? "group min-w-[120px] max-w-[220px] shrink-0" : t.kind === "session" ? "group min-w-[120px] max-w-[220px] shrink" : "min-w-[120px] max-w-[300px] shrink",
+              pin ? "shrink-0 justify-center gap-1.5 px-2.5" : isMain ? cn("group min-w-[120px] shrink-0", t.kind === "session" ? "max-w-[220px]" : "max-w-[300px]") : t.kind === "session" ? "group min-w-[120px] max-w-[220px] shrink" : "min-w-[120px] max-w-[300px] shrink",
               on ? TAB_ON : "border-transparent text-ac-muted hover:bg-ac-raise hover:text-ac-text",
               drag?.moving && drag.id === t.id && "opacity-50",
               // While a tab drags, the tabs of the other groups dim: it can only land among its own.
@@ -206,7 +206,7 @@ export function TabStrip({
                   <X className="size-3 text-ac-muted hover:text-ac-text" />
                 </span>}
               </span>
-            ) : (
+            ) : isMain ? null : (
               <span aria-hidden data-tab-close onClick={(e) => (e.stopPropagation(), onClose(t.id))} className="inline-flex cursor-pointer">
                 <X className="size-3 text-ac-muted" />
               </span>

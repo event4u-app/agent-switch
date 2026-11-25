@@ -35,7 +35,7 @@ describe("tab strip state", () => {
   });
 
   it("pins to the end of the pinned group, after the main tab, and unpins to the front of its own group", () => {
-    let s = strip("page:tools", "s1", "s2", "s3", "s4");
+    let s = strip("s1", "page:tools", "s2", "s3", "s4");
     // s1 is the main tab: it does not pin.
     expect(pinTab(s, "s1")).toBe(s);
     s = pinTab(pinTab(s, "s4"), "s2");
@@ -99,7 +99,7 @@ describe("tab strip state", () => {
   });
 
   it("drags inside a group, and a drop into another group stops at the group's edge; the main tab stays first", () => {
-    const s = pinTab(strip("page:tools", "page:library", "s1", "s2", "s3", "s4"), "s4");
+    const s = pinTab(strip("s1", "page:tools", "page:library", "s2", "s3", "s4"), "s4");
     // s1 (main), s4 (pinned), tools, library, s2, s3
     expect(s.order).toEqual(["s1", "s4", "page:tools", "page:library", "s2", "s3"]);
     expect(moveTab(s, "s3", "s2", "before").order).toEqual(["s1", "s4", "page:tools", "page:library", "s3", "s2"]);
@@ -142,13 +142,13 @@ describe("tab strip state", () => {
 });
 
 describe("the default tab and more tabs of one session (owner, 2026-11-25)", () => {
-  it("opens in the first unpinned session tab, in place; a session with a tab goes to it", async () => {
+  it("opens in the main tab (the first unpinned one, page or session), in place; a session with a tab goes to it", async () => {
     const { openInDefault, EMPTY_TABS: E } = await import("./tabs.js");
     const s = { ...E, order: ["p1", "page:library", "a", "b"], pinned: ["p1"] };
     const r = openInDefault(s, "c");
     expect(r.id).toBe("c");
-    // The session takes the main tab's place, and the main tab is first.
-    expect(r.state.order).toEqual(["c", "p1", "page:library", "b"]);
+    // The session takes the main tab's place (here a page), and the main tab is first.
+    expect(r.state.order).toEqual(["c", "p1", "a", "b"]);
     expect(openInDefault(r.state, "b")).toEqual({ state: r.state, id: "b" });
     expect(openInDefault(E, "x").state.order).toEqual(["x"]);
   });
@@ -164,10 +164,28 @@ describe("the default tab and more tabs of one session (owner, 2026-11-25)", () 
   });
 });
 
+describe("pages open in the main tab too (owner, 2026-11-26)", () => {
+  it("Arenas, Settings… take the main tab's place; an open page goes to its tab; a new tab only when asked", async () => {
+    const { openInDefault, openTab, mainTab, EMPTY_TABS: E } = await import("./tabs.js");
+    let s = openTab(openTab(E, "a"), "b");
+    let r = openInDefault(s, "page:arenas");
+    expect(r.state.order).toEqual(["page:arenas", "b"]);
+    expect(mainTab(r.state)).toBe("page:arenas");
+    r = openInDefault(r.state, "page:settings");
+    expect(r.state.order).toEqual(["page:settings", "b"]);
+    // Asked for a tab of its own: the main tab keeps what it shows.
+    s = openTab(r.state, "page:arenas");
+    expect(s.order).toEqual(["page:settings", "page:arenas", "b"]);
+    expect(openInDefault(s, "page:arenas")).toEqual({ state: s, id: "page:arenas" });
+    // A session opens in the main tab, in place of the page there.
+    expect(openInDefault(s, "a").state.order).toEqual(["a", "page:arenas", "b"]);
+  });
+});
+
 describe("the main tab cannot be closed (owner, 2026-11-25)", () => {
   it("no close path takes the first unpinned session tab", async () => {
     const { closeTab, closeOthers, closeUnpinned, closable, mainTab, EMPTY_TABS: E } = await import("./tabs.js");
-    const s = { ...E, order: ["p", "page:library", "a", "b"], pinned: ["p"] };
+    const s = { ...E, order: ["p", "a", "page:library", "b"], pinned: ["p"] };
     expect(mainTab(s)).toBe("a");
     expect(closeTab(s, "a", true).order).toContain("a");
     expect(closeOthers(s, "b").order).toEqual(["a", "p", "b"]);

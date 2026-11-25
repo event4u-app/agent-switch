@@ -2,8 +2,8 @@
  * The tab strip's state (owner request 2026-11-05): the order the user gave the
  * tabs, which ones are pinned, and the recently closed ones to reopen.
  *
- * Always in this order: the main tab, then pinned tabs, then page tabs, then
- * session tabs (spec §6.1 keeps pages before sessions). The main tab stays
+ * Always in this order: the main tab (a session or a page), then pinned tabs,
+ * then page tabs, then session tabs (spec §6.1 keeps pages before sessions). The main tab stays
  * first — nothing moves before it, it is never pinned, it never closes (owner,
  * 2026-11-26). Dragging reorders a tab inside its own group; pinning moves it
  * to the end of the pinned group. A pinned tab does not close with the plain
@@ -46,14 +46,14 @@ export function copyId(s: TabState, key: string): string {
 }
 
 /**
- * Everything opens in the default tab (owner, 2026-11-25): the first session tab that is not pinned
- * takes the session in place; a session that already has a tab goes to it. With no such tab, a new
- * one. Returns the new state and the tab to show. Pure.
+ * Everything opens in the main tab (owner, 2026-11-25/26): sessions and pages alike (Arenas, Settings, a
+ * review…) take the main tab's place; a session or page that already has a tab goes to it. With no main
+ * tab, a new one. A new tab only when asked for. Returns the new state and the tab to show. Pure.
  */
 export function openInDefault(s: TabState, key: string): { state: TabState; id: string } {
-  const own = s.order.find((id) => !isPageTab(id) && sessionOf(id) === key);
+  const own = s.order.find((id) => (isPageTab(key) ? id === key : !isPageTab(id) && sessionOf(id) === key));
   if (own) return { state: s, id: own };
-  const slot = s.order.find((id) => !isPageTab(id) && !s.pinned.includes(id));
+  const slot = mainTab(s);
   if (!slot) return { state: openTab(s, key), id: key };
   // The tab in the slot gives way: when it was the main tab, the session takes its place as the main tab.
   const order = s.order.map((id) => (id === slot ? key : id));
@@ -79,7 +79,7 @@ export function arrange(order: readonly string[], pinned: readonly string[], mai
   return ([-1, 0, 1, 2] as const).flatMap((g) => order.filter((id) => groupOf(id, pinned, main) === g));
 }
 
-const firstFree = (order: readonly string[], pinned: readonly string[]) => order.find((id) => !isPageTab(id) && !pinned.includes(id)) ?? null;
+const firstFree = (order: readonly string[], pinned: readonly string[]) => order.find((id) => !pinned.includes(id)) ?? null;
 
 /** Regroup `next`; the main tab of `prev` stays the main tab while it is open and unpinned. */
 function settle(next: TabState, prev: TabState = next): TabState {
@@ -148,7 +148,7 @@ export const closeUnpinned = (s: TabState): TabState => closeTabs(s, s.order);
 /** The tabs a close of `ids` would actually take (pinned ones stay). */
 export const closable = (s: TabState, ids: readonly string[]): string[] => ids.filter((id) => s.order.includes(id) && !isPinned(s, id) && id !== mainTab(s));
 
-/** The main tab: the first session tab that is not pinned, always first in the strip. Everything opens there; it cannot be closed (owner, 2026-11-25/26). Pure. */
+/** The main tab: the first tab that is not pinned — a session or a page — always first in the strip. Everything opens there; it cannot be closed (owner, 2026-11-25/26). Pure. */
 export const mainTab = (s: TabState): string | null => firstFree(s.order, s.pinned);
 
 /**

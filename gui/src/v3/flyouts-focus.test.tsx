@@ -170,8 +170,8 @@ describe("the right rail on a page tab (8.6)", () => {
       fireEvent.click(b);
       expect(b.getAttribute("aria-pressed")).toBe("false");
     }
-    // Back on the session, its panel is still the one it had.
-    fireEvent.click(screen.getByRole("tab", { name: /Event store/ }));
+    // Back on the session (Settings took the main tab, so from the list), its panel is still the one it had.
+    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
     expect(rail().getByLabelText(/^Summary/).getAttribute("aria-pressed")).toBe("true");
     expect(rail().getByLabelText(/^Summary/).getAttribute("aria-disabled")).toBeNull();
   });

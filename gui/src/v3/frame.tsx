@@ -34,6 +34,7 @@ export function TitleBar({
   onSettings,
   onInbox,
   onRestart,
+  onSettingsMenu,
 }: {
   health: "ready" | "down";
   /** Shown only while the Sessions window is hidden (focus mode); null otherwise. */
@@ -46,9 +47,12 @@ export function TitleBar({
   onHistory?: () => void;
   onSearch: () => void;
   onStart: () => void;
-  onSettings: () => void;
+  /** `newTab`: ⌘/Ctrl-click asks for a tab of its own; else Settings opens in the main tab (owner, 2026-11-26). */
+  onSettings: (newTab?: boolean) => void;
   onInbox: () => void;
   onRestart: () => void;
+  /** Right click on Settings: Open, Open in new tab. */
+  onSettingsMenu?: (at: { x: number; y: number }) => void;
 }) {
   return (
     <header data-tauri-drag-region className="relative flex h-11 shrink-0 items-center gap-2 border-b border-ac-line bg-ac-rail pl-[84px] pr-3">
@@ -94,7 +98,12 @@ export function TitleBar({
       <IconButton label="Notifications" data-popover-trigger="" aria-pressed={!!inboxOpen} active={!!inboxOpen} badge={notifications ? (notifications > 9 ? "9+" : notifications) : undefined} onClick={onInbox}>
         <Bell />
       </IconButton>
-      <IconButton label="Settings  ⌘," onClick={onSettings}>
+      <IconButton
+        label="Settings  ⌘,"
+        onClick={(e) => onSettings(e.metaKey || e.ctrlKey)}
+        onAuxClick={(e) => e.button === 1 && (e.preventDefault(), onSettings(true))}
+        onContextMenu={onSettingsMenu && ((e) => (e.preventDefault(), onSettingsMenu({ x: e.clientX, y: e.clientY })))}
+      >
         <Settings />
       </IconButton>
     </header>
@@ -115,7 +124,24 @@ export interface StripeItem {
   gap?: boolean;
 }
 
-export function Stripe({ side, items, active, why, onSelect }: { side: "left" | "right"; items: StripeItem[]; active?: string | readonly string[] | null; /** Why no button can act here (a page tab has no session); absent: they can. */ why?: string | null; onSelect: (id: string) => void }) {
+export function Stripe({
+  side,
+  items,
+  active,
+  why,
+  onSelect,
+  onMenu,
+}: {
+  side: "left" | "right";
+  items: StripeItem[];
+  active?: string | readonly string[] | null;
+  /** Why no button can act here (a page tab has no session); absent: they can. */
+  why?: string | null;
+  /** `newTab`: ⌘/Ctrl-click or a middle click asks for a tab of its own (owner, 2026-11-26). */
+  onSelect: (id: string, newTab?: boolean) => void;
+  /** Right click on a page button: its menu (Open, Open in new tab), at the pointer. */
+  onMenu?: (id: string, at: { x: number; y: number }) => void;
+}) {
   const button = (it: StripeItem) => [it.gap ? <span key={`gap:${it.id}`} aria-hidden data-stripe-gap="" className="my-1 h-px w-6 bg-ac-line" /> : null, one(it)];
   const one = (it: StripeItem) => {
     const on = !why && (Array.isArray(active) ? active.includes(it.id) : it.id === active);
@@ -128,7 +154,9 @@ export function Stripe({ side, items, active, why, onSelect }: { side: "left" | 
         aria-label={label}
         aria-pressed={on}
         aria-disabled={why ? true : undefined}
-        onClick={why ? undefined : () => onSelect(it.id)}
+        onClick={why ? undefined : (e) => onSelect(it.id, e.metaKey || e.ctrlKey)}
+        onAuxClick={why || !onMenu || it.id === "sessions" ? undefined : (e) => e.button === 1 && (e.preventDefault(), onSelect(it.id, true))}
+        onContextMenu={why || !onMenu || it.id === "sessions" ? undefined : (e) => (e.preventDefault(), onMenu(it.id, { x: e.clientX, y: e.clientY }))}
         className={cn("relative inline-flex size-9 items-center justify-center rounded-md [&_svg]:size-[18px]", on ? "bg-ac-raise text-ac-text" : why ? "cursor-not-allowed text-ac-muted opacity-50" : "text-ac-muted hover:bg-ac-raise hover:text-ac-text")}
       >
         {on && <Marker />}
@@ -187,13 +215,13 @@ export type PageId = "library" | "accounts" | "tools" | "settings" | "arenas" | 
  * time, closed by default; clicking the open one closes it. Page buttons open
  * page tabs (the caller's `onPage`). Nothing opens on its own.
  */
-export function useFrame(onPage: (p: PageId) => void) {
+export function useFrame(onPage: (p: PageId, newTab?: boolean) => void) {
   const [sessionsShown, setSessionsShown] = useState(true);
   const [right, setRight] = useState<RightWindow | null>(null);
   const selectLeft = useCallback(
-    (id: string) => {
+    (id: string, newTab?: boolean) => {
       if (id === "sessions") setSessionsShown((v) => !v);
-      else onPage(id as PageId);
+      else onPage(id as PageId, newTab);
     },
     [onPage],
   );
@@ -217,6 +245,7 @@ export function Shell({
   historyOpen,
   running,
   activePage,
+  onPageMenu,
 }: {
   frame: ReturnType<typeof useFrame>;
   health: "ready" | "down";
@@ -232,18 +261,20 @@ export function Shell({
   centre: ReactNode;
   rightWindow: ReactNode;
   overlay?: ReactNode;
-  actions: { onSearch: () => void; onStart: () => void; onSettings: () => void; onInbox: () => void; onRestart: () => void; onHistory?: () => void };
+  actions: { onSearch: () => void; onStart: () => void; onSettings: (newTab?: boolean) => void; onInbox: () => void; onRestart: () => void; onHistory?: () => void };
   historyOpen?: boolean;
   /** Arenas, councils, panels running now: the bottom stripe badges. */
   running?: Record<RunKind, number>;
   /** The page tab in front, so its stripe button reads as pressed. */
   activePage?: string | null;
+  /** Right click on a left-stripe page button (or on Settings): Open, Open in new tab. */
+  onPageMenu?: (id: string, at: { x: number; y: number }) => void;
 }) {
   return (
     <div data-v3-shell className="relative flex h-full min-h-0 flex-col bg-ac-bg">
-      <TitleBar health={health} inbox={frame.sessionsShown ? null : inbox} inboxOpen={inboxOpen} notifications={inbox.count} historyOpen={historyOpen} {...actions} />
+      <TitleBar health={health} inbox={frame.sessionsShown ? null : inbox} inboxOpen={inboxOpen} notifications={inbox.count} historyOpen={historyOpen} onSettingsMenu={onPageMenu && ((at) => onPageMenu("settings", at))} {...actions} />
       <div className="flex min-h-0 flex-1">
-        <Stripe side="left" items={leftItems(!frame.sessionsShown && needsYou, running)} active={[...(frame.sessionsShown ? ["sessions"] : []), ...(activePage && ["arenas", "councils", "panels"].includes(activePage) ? [activePage] : [])]} onSelect={frame.selectLeft} />
+        <Stripe side="left" items={leftItems(!frame.sessionsShown && needsYou, running)} active={[...(frame.sessionsShown ? ["sessions"] : []), ...(activePage && ["arenas", "councils", "panels"].includes(activePage) ? [activePage] : [])]} onSelect={frame.selectLeft} onMenu={onPageMenu} />
         {frame.sessionsShown && sessionsWindow}
         {centre}
         {frame.right && !rightWhy && rightWindow}
