@@ -192,6 +192,22 @@ describe("toV3Data", () => {
     expect(toV3Data(vm, feeds, env({ ownViews: new Map([["claude/work/h1", "chat"]]) })).bar("claude/work/h1")?.view).toBe("terminal");
   });
 
+  it("a model or thinking change shows at once and holds until the transcript reports it", () => {
+    const ctx = (model: string, effort: string) => ({ pct: 10, contextTokens: 1, windowTokens: 2, model, effort, confidence: "exact", source: "transcript" }) as unknown as SessionRow["context"];
+    const feeds: V3Feeds = { ...emptyFeeds(), host: { mode: "persistent", hosted: [{ key: "claude/work/h1", provider: "claude", account: "work", sessionId: "h1", cwd: "/r", startedAt: "", alive: true, parked: false }] } };
+    const nextTurn = new Map([["claude/work/h1", { model: "sonnet", effort: "low" }]]);
+    const before = toV3Data(vmWith([account("work")], [row("h1", { context: ctx("claude-opus-5-5", "high") })]), feeds, env({ nextTurn }));
+    expect(before.bar("claude/work/h1")).toMatchObject({ model: "Sonnet", thinking: "low" });
+    expect(before.models?.("claude/work/h1")).toMatchObject({ current: "sonnet", currentThinking: "low" });
+    expect(before.table.find((t) => t.key === "claude/work/h1")).toMatchObject({ model: "Sonnet", thinking: "low" });
+    // Only the thinking changed: the model stays what the transcript says.
+    const effortOnly = toV3Data(vmWith([account("work")], [row("h1", { context: ctx("claude-opus-5-5", "high") })]), feeds, env({ nextTurn: new Map([["claude/work/h1", { effort: "max" }]]) }));
+    expect(effortOnly.bar("claude/work/h1")).toMatchObject({ model: "Opus 5.5", thinking: "max" });
+    // The next turn ran on it: the transcript speaks again.
+    const after = toV3Data(vmWith([account("work")], [row("h1", { context: ctx("claude-sonnet-5-5", "low") })]), feeds, env());
+    expect(after.bar("claude/work/h1")).toMatchObject({ model: "Sonnet 5.5", thinking: "low" });
+  });
+
   it("the bar knows where a session runs: a hosted window can be attached; elsewhere it names the app watched", () => {
     const vm = vmWith([account("work")], [row("own"), row("h1"), row("desk", { surface: "desktop-app" }), row("chat1")]);
     const feeds: V3Feeds = { ...emptyFeeds(), host: { mode: "persistent", hosted: [{ key: "claude/work/h1", provider: "claude", account: "work", sessionId: "h1", cwd: "/r", startedAt: "", alive: true, parked: false }] } };

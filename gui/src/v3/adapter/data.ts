@@ -60,6 +60,29 @@ export interface AdapterEnv {
   draft?: NewSessionPlan | null;
   /** The user's home folder, for a typed `~/…` folder; null until read. */
   home?: string | null;
+  /** Model and thinking a hosted session was restarted on, per key, until a turn on them reaches the transcript. */
+  nextTurn?: ReadonlyMap<string, NextTurn>;
+}
+
+/** What `host respawn` set for the next turn: the transcript only reports it once that turn ran. */
+export interface NextTurn {
+  model?: string;
+  effort?: string;
+}
+
+const effortIn = (r: SessionRow): string | null => (r.context as { effort?: string | null } | null | undefined)?.effort ?? null;
+
+/** The model and thinking a session runs on: what was just chosen for it, else what its last turn reports. */
+function runsOn(r: SessionRow, env: AdapterEnv): { modelId: string | null; effort: string | null } {
+  const next = env.nextTurn?.get(sessionKey(r));
+  return { modelId: next?.model ?? r.context?.model ?? null, effort: next?.effort ?? effortIn(r) };
+}
+
+/** True once the transcript reports every part of a change: the change is no longer pending. */
+export function nextTurnReached(r: SessionRow | undefined, next: NextTurn): boolean {
+  if (!r) return true;
+  const model = (r.context?.model ?? "").toLowerCase();
+  return (!next.model || model.includes(next.model.toLowerCase())) && (!next.effort || effortIn(r) === next.effort);
 }
 
 export { THINKING_LEVELS };
@@ -553,8 +576,8 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       account: { name: r.profile, color: colorOf(r) },
       branch: r.git?.branch ?? null,
       pr: pr ? { number: pr.number, ci: pr.ci } : null,
-      model: modelLabel(r.context?.model),
-      thinking: (r.context as { effort?: string | null } | null | undefined)?.effort ?? null,
+      model: modelLabel(runsOn(r, env).modelId),
+      thinking: runsOn(r, env).effort,
       contextPct: r.context?.pct ?? null,
       lastActiveMs: r.mtimeMs,
       project: projectOf(r),
@@ -693,9 +716,9 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
         chatAvailable: r.provider === "claude" || r.provider === "codex",
         view: env.chats?.has(key) ? "chat" : hosted.has(key) ? "terminal" : (env.ownViews?.get(key) ?? "chat"),
         account: { name: r.profile, color: colorOf(r), fiveH: fiveH(a), protect: a?.threshold ?? 98 },
-        model: modelLabel(r.context?.model),
-        modelId: r.context?.model ?? null,
-        thinking: (r.context as { effort?: string | null } | null | undefined)?.effort ?? null,
+        model: modelLabel(runsOn(r, env).modelId),
+        modelId: runsOn(r, env).modelId,
+        thinking: runsOn(r, env).effort,
         contextPct: r.context?.pct ?? null,
         tool: r.provider,
         contextTokens: r.context?.contextTokens ?? null,
@@ -705,8 +728,9 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     models: (key): ModelChoices | null => {
       const r = byKey.get(key);
       if (!r || (r.provider !== "claude" && r.provider !== "codex")) return null;
-      const id = (r.context?.model ?? "").toLowerCase();
-      const effort = (r.context as { effort?: string | null } | null | undefined)?.effort ?? null;
+      const on = runsOn(r, env);
+      const id = (on.modelId ?? "").toLowerCase();
+      const effort = on.effort;
       // Codex keeps the model its config names; only its reasoning level changes here.
       const models = r.provider === "claude" ? CLAUDE_MODELS : [];
       return {

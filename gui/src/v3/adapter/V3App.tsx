@@ -30,7 +30,7 @@ import { localLayout } from "../layout.js";
 import { KEYS_STORAGE, withRebinds } from "../keys.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
-import { canTakeOver, chatStart, hasOpenPr, initialPlan, NO_TERMINAL_WHY, sessionKey, startKey, toV3Data, worktreeOf, type AdapterEnv, type SessionTerminal } from "./data.js";
+import { canTakeOver, chatStart, hasOpenPr, initialPlan, nextTurnReached, NO_TERMINAL_WHY, sessionKey, startKey, toV3Data, worktreeOf, type AdapterEnv, type NextTurn, type SessionTerminal } from "./data.js";
 import { SessionBody, SubagentTranscript, ToolsSlot, settingsSection } from "./slots.js";
 import { BoardPage } from "../board/BoardPage.js";
 import type { SessionRow } from "../../transforms.js";
@@ -198,6 +198,9 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     void sRef.current.reload();
   }, [refreshFeeds]);
 
+  // A model or thinking change shows until the session's next turn reports it in the transcript.
+  const [nextTurn, setNextTurn] = useState<ReadonlyMap<string, NextTurn>>(() => new Map());
+
   const wantChanges = useCallback((key: string) => {
     const at = changesAt.current.get(key) ?? 0;
     if (Date.now() - at < CHANGES_FRESH_MS) return;
@@ -285,6 +288,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     terminals,
     wantTerminal,
     route,
+    nextTurn,
     chats: chats.keys,
     ownViews,
     // A new chat that the CLI already lists under its real key needs no stand-in row.
@@ -298,6 +302,9 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
 
   const byKey = useMemo(() => new Map(rows.map((r) => [sessionKey(r), r])), [rows]);
   byKeyRef.current = byKey;
+  useEffect(() => {
+    if ([...nextTurn].some(([k, n]) => nextTurnReached(byKey.get(k), n))) setNextTurn((m) => new Map([...m].filter(([k, n]) => !nextTurnReached(byKey.get(k), n))));
+  }, [byKey, nextTurn]);
   // A move handed to the background service reports back here when it is done.
   useServiceOutcomes(s.switchRequests, s);
   const hostedKeys = new Set((feeds.host?.hosted ?? []).filter((h) => h.alive).map((h) => h.key));
@@ -338,6 +345,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       return tab ? (chats.states.get(tab) ?? null) : null;
     },
     takeOver: (key) => setTakeover({ key, busy: false, error: null }),
+    nextTurn: (key, change) => setNextTurn((m) => new Map(m).set(key, { ...m.get(key), ...change })),
   };
   const act = (a: V3Action) => {
     // What the person did: the action and the session it is about, never what it carries (text, files).
