@@ -11,7 +11,7 @@ import { Bot, ChevronDown, ChevronRight, Folder, Gavel, SquareTerminal, Swords, 
 import { cn } from "../lib/utils.js";
 import { SessionStateIcon, type StateSource } from "../ui/SessionStateIcon.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
-import { AccountMark, BatchBar, CheckMark, Chip, Marker, ago, duration, type BatchActions } from "./kit.js";
+import { AccountMark, BatchBar, CheckMark, Chip, Marker, ago, duration, inShell, type BatchActions } from "./kit.js";
 import { AppMono } from "./menus.js";
 import { useEngaged, useHeldOrder } from "./held-order.js";
 
@@ -472,8 +472,7 @@ function ChildRow({ c, parent, depth, rails, last, onSelect, onSubagent, onBoard
       onMouseEnter={
         onPeek &&
         ((e) => {
-          const shell = e.currentTarget.closest("[data-v3-shell]");
-          onPeek(c.id, Math.round(e.currentTarget.getBoundingClientRect().top - (shell?.getBoundingClientRect().top ?? 0)));
+          onPeek(c.id, Math.round(inShell(e.currentTarget).top));
         })
       }
       onMouseLeave={onPeek && (() => onPeek(null, 0))}
@@ -633,8 +632,7 @@ export function SessionRow({
         onMouseEnter={
           onPeek &&
           ((e) => {
-            const shell = e.currentTarget.closest("[data-v3-shell]");
-            onPeek(s.key, Math.round(e.currentTarget.getBoundingClientRect().top - (shell?.getBoundingClientRect().top ?? 0)));
+            onPeek(s.key, Math.round(inShell(e.currentTarget).top));
           })
         }
         onMouseLeave={onPeek && (() => onPeek(null, 0))}
@@ -846,8 +844,7 @@ export function SessionsZone({
             aria-haspopup="menu"
             aria-expanded={!!viewOpen}
             onClick={(e) => {
-              const shell = e.currentTarget.closest("[data-v3-shell]");
-              onView(Math.round(e.currentTarget.getBoundingClientRect().top - (shell?.getBoundingClientRect().top ?? 0)));
+              onView(Math.round(inShell(e.currentTarget).top));
             }}
             title="Sort and group"
             className={cn("-mr-1.5 ml-auto inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-ac-muted hover:bg-ac-raise hover:text-ac-text", viewOpen && "bg-ac-raise text-ac-text")}

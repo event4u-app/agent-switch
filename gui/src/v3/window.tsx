@@ -34,7 +34,7 @@ import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, Set
 import type { Appearance } from "./themes/resolve.js";
 import { allNeeds } from "./tools.js";
 import { AFTER_TURN_DOWN_WHY, BlockerStrip, HintStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, HOSTED_HINT, type BarChipId, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
-import { AccountMark, Act, type BatchActions } from "./kit.js";
+import { AccountMark, Act, inShell, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding } from "./keys.js";
@@ -175,20 +175,23 @@ function isKnownPage(p: string, sessions: ReadonlySet<string>): boolean {
 
 /** A window point in the shell's coordinates, kept so a menu `width` wide stays inside. */
 function shellPoint(at: { x: number; y: number }, width = 260): { x: number; y: number } {
-  const r = typeof document !== "undefined" ? document.querySelector("[data-v3-shell]")?.getBoundingClientRect() : undefined;
-  const x = at.x - (r?.left ?? 0);
-  const y = at.y - (r?.top ?? 0);
-  return { x: r && r.width ? Math.max(4, Math.min(x, r.width - width - 4)) : x, y };
+  const el = typeof document !== "undefined" ? (document.querySelector("[data-v3-shell]") as HTMLElement | null) : null;
+  const r = el?.getBoundingClientRect();
+  // In the shell's own pixels: a zoomed view scales the screen point, not the layer (see inShell).
+  const k = el && r && el.offsetWidth ? r.width / el.offsetWidth || 1 : 1;
+  const x = (at.x - (r?.left ?? 0)) / k;
+  const y = (at.y - (r?.top ?? 0)) / k;
+  const w = el?.offsetWidth ?? 0;
+  return { x: w ? Math.max(4, Math.min(x, w - width - 4)) : x, y };
 }
 
 /** Where a menu opens under its trigger, in shell coordinates: its top and its distance from the right edge. */
 type Anchor = { top: number; right: number };
 /** Under `trigger`, right edges aligned, so the menu follows its button wherever the bar puts it. */
 function anchorUnder(trigger: Element): Anchor | undefined {
-  const shell = trigger.closest("[data-v3-shell]")?.getBoundingClientRect();
-  const r = trigger.getBoundingClientRect();
-  if (!shell || !shell.width) return undefined;
-  return { top: Math.round(r.bottom - shell.top + 4), right: Math.max(4, Math.round(shell.right - r.right)) };
+  if (!trigger.closest("[data-v3-shell]")) return undefined;
+  const r = inShell(trigger);
+  return { top: Math.round(r.bottom + 4), right: Math.max(4, Math.round(r.width - r.right)) };
 }
 
 /** One icon per session action, the same in the ⋯ menu and the tab's menu. */
@@ -990,8 +993,8 @@ export function V3Window({
         />
       </Anchored>
     ) : overlay && typeof overlay === "object" && "listView" in overlay ? (
-      // Beside the list, level with its control, so the rows it reorders stay in view.
-      <Anchored onClose={close} className="absolute left-[324px] z-10" style={{ top: overlay.listView }}>
+      // Beside the list (where the limits card and the peek open), level with its control, so the rows it reorders stay in view.
+      <Anchored onClose={close} className="absolute left-[348px] z-10" style={{ top: overlay.listView }}>
         <Menu
           label="Sort and group"
           width={232}

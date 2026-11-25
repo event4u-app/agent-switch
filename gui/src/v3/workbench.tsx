@@ -10,7 +10,7 @@ import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
-import { Act, AccountMark, Chip } from "./kit.js";
+import { Act, AccountMark, Chip, inShell } from "./kit.js";
 import { Segmented } from "../ui/Segmented.js";
 import { tone } from "./limits.js";
 import { XtermBox } from "../redesign/screens/terminal-sheet.js";
@@ -287,10 +287,7 @@ function BarChip({ children, title, locked, open, chip, moved, onClick }: { chil
 }
 
 /** A chip's left edge inside the window shell, where its popover anchors. */
-const shellX = (e: MouseEvent<HTMLElement>): number => {
-  const shell = e.currentTarget.closest("[data-v3-shell]");
-  return Math.round(e.currentTarget.getBoundingClientRect().left - (shell?.getBoundingClientRect().left ?? 0));
-};
+const shellX = (e: MouseEvent<HTMLElement>): number => Math.round(inShell(e.currentTarget).left);
 
 export const HOSTED_HINT = "type here, or attach from your terminal";
 
