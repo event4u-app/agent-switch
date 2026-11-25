@@ -8,6 +8,7 @@
  */
 
 import { spawnSync } from "node:child_process";
+import * as path from "node:path";
 
 export class FocusFailed extends Error {
   constructor(message: string, readonly fix?: string) {
@@ -27,7 +28,12 @@ export function ttyOf(pid: number): string | null {
 export interface TerminalApp {
   name: string;
   app: "Terminal" | "iTerm2" | null;
+  /** The macOS app bundle it runs in, when `app` cannot pick the tab: Focus brings that app to the front. */
+  bundle?: string;
 }
+
+/** `/Applications/PhpStorm.app` from a process path inside it, or null. Pure. */
+const bundleOf = (comm: string): string | null => /^(\/.*?\.app)\//.exec(comm)?.[1] ?? null;
 
 /** Process names (`comm`) of the terminals people run agents in, first match wins.
  *  An editor's terminal names the editor; the user's own tmux names tmux, whose
@@ -60,7 +66,10 @@ export function terminalOf(pid: number, ps: (pid: number) => string = psLine): T
     const m = /^\s*(\d+)\s+(.*)$/.exec(ps(cur).trim());
     if (!m) return null;
     const hit = TERMINALS.find(([re]) => re.test(m[2]));
-    if (hit) return { ...hit[1] };
+    const bundle = bundleOf(m[2]);
+    if (hit) return { ...hit[1], ...(!hit[1].app && bundle ? { bundle } : {}) };
+    // Any other app the shell runs in (an IDE's terminal: PhpStorm, IntelliJ, …) is named by its bundle.
+    if (bundle) return { name: path.basename(bundle, ".app"), app: null, bundle };
     cur = Number(m[1]);
   }
   return null;
@@ -120,6 +129,12 @@ export function focusSession(pid: number): { app: string; tty: string } {
   if (!tty) throw new FocusFailed("the session has no terminal (it may run in an app or in the background)");
   const found = terminalOf(pid);
   const app = found?.app;
+  if (!app && found?.bundle) {
+    // No way to pick its tab from outside: bring the app itself to the front.
+    const r = spawnSync("open", [found.bundle], { encoding: "utf8", timeout: 5000 });
+    if (r.status !== 0) throw new FocusFailed(`${found.name} could not be brought to the front: ${(r.stderr ?? "").trim().split("\n")[0] || `exit ${r.status}`}`);
+    return { app: found.name, tty };
+  }
   if (!app) throw new FocusFailed(`the session runs in ${found ? found.name : "a terminal"}, which Agent Switch cannot focus (Terminal.app and iTerm2 are supported)`);
   const r = spawnSync("osascript", ["-e", focusScript(app, tty)], { encoding: "utf8", timeout: 5000 });
   interpret(r.status, r.stdout ?? "", r.stderr ?? "", app);

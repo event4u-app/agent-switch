@@ -92,15 +92,17 @@ test("terminal of a session: the app is read from the process tree, not guessed"
   };
   assert.deepEqual(terminalOf(40, tree("/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal")), { name: "Terminal.app", app: "Terminal" });
   assert.deepEqual(terminalOf(40, tree("/Applications/iTerm.app/Contents/MacOS/iTerm2")), { name: "iTerm2", app: "iTerm2" });
-  assert.deepEqual(terminalOf(40, tree("/Applications/Ghostty.app/Contents/MacOS/ghostty")), { name: "Ghostty", app: null });
-  assert.deepEqual(terminalOf(40, tree("/Applications/Warp.app/Contents/MacOS/stable")), { name: "Warp", app: null });
-  assert.deepEqual(terminalOf(40, tree("/Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Plugin).app/Contents/MacOS/Code Helper (Plugin)")), { name: "VS Code", app: null });
+  assert.deepEqual(terminalOf(40, tree("/Applications/Ghostty.app/Contents/MacOS/ghostty")), { name: "Ghostty", app: null, bundle: "/Applications/Ghostty.app" });
+  assert.deepEqual(terminalOf(40, tree("/Applications/Warp.app/Contents/MacOS/stable")), { name: "Warp", app: null, bundle: "/Applications/Warp.app" });
+  assert.deepEqual(terminalOf(40, tree("/Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Plugin).app/Contents/MacOS/Code Helper (Plugin)")), { name: "VS Code", app: null, bundle: "/Applications/Visual Studio Code.app" });
   assert.deepEqual(terminalOf(40, tree("tmux")), { name: "tmux", app: null });
+  // An IDE's terminal: named and brought forward by its bundle.
+  assert.deepEqual(terminalOf(40, tree("/Users/me/Applications/PhpStorm.app/Contents/MacOS/phpstorm")), { name: "PhpStorm", app: null, bundle: "/Users/me/Applications/PhpStorm.app" });
   assert.equal(terminalOf(40, tree("/usr/libexec/some-daemon")), null, "an unknown parent names no app");
   assert.equal(terminalOf(40, () => ""), null);
 });
 
-test("terminal facts: only a live Claude session in Terminal.app or iTerm2 on macOS can be focused", async () => {
+test("terminal facts: a live Claude session on macOS can be focused in Terminal.app, iTerm2, or an app Agent Switch can bring forward", async () => {
   const { terminalFacts } = await import("../src/commands/open-in.js");
   const iterm = () => ({ name: "iTerm2", app: "iTerm2" as const });
   assert.deepEqual(terminalFacts("claude", 40, "darwin", iterm), { running: true, terminal: "iTerm2", focusable: true });
@@ -108,6 +110,8 @@ test("terminal facts: only a live Claude session in Terminal.app or iTerm2 on ma
   assert.equal(ghostty.terminal, "Ghostty");
   assert.equal(ghostty.focusable, false);
   assert.match(ghostty.why!, /Ghostty/);
+  const ide = terminalFacts("claude", 40, "darwin", () => ({ name: "PhpStorm", app: null, bundle: "/Applications/PhpStorm.app" }));
+  assert.deepEqual(ide, { running: true, terminal: "PhpStorm", focusable: true }, "an app with a known bundle is brought to the front");
   assert.deepEqual(terminalFacts("claude", null, "darwin", iterm), { running: false, terminal: null, focusable: false, why: "it is not running" });
   const linux = terminalFacts("claude", 40, "linux", () => ({ name: "kitty", app: null }));
   assert.equal(linux.terminal, "kitty");
