@@ -374,6 +374,11 @@ export function resumeFactsFor(events: readonly HookEventRecord[], sessionId: st
 /** The host waiting out a usage limit by itself — the session needs nothing
  *  from the user. `_disabled`, `_stale` and `_offer` do ask something of them. */
 const HOST_WAIT_TYPES = new Set(["quota_auto_resume_armed", "quota_auto_resume_fired", "quota_auto_resume_cancelled", "quota_auto_resume_setting"]);
+/** Notifications that ask the user nothing: the host waiting out a limit, a sign-in that
+ *  went through, or Claude's reminder that a finished turn has sat idle (`idle_prompt`). */
+const NOT_ASKING = new Set([...HOST_WAIT_TYPES, "idle_prompt", "auth_success"]);
+/** Whether a `Notification` of this type waits on the user (a prompt, a question). Pure. */
+export const notificationAsks = (type: string | undefined): boolean => !(type && NOT_ASKING.has(type));
 
 const STOP_REASONS: Record<string, string> = {
   rate_limit: "hit its usage limit",
@@ -404,6 +409,8 @@ export function hookNotice(
     return { kind: "warning", title: `${tool} stopped`, message: `${name} ${reason}.` };
   }
   if (rec.event === "Notification") {
+    // A minute after the turn ended: the Stop notice already said so.
+    if (rec.notificationType === "idle_prompt") return null;
     const wait = rec.notificationType ? HOST_WAIT_TEXT[rec.notificationType] : undefined;
     if (wait) return { kind: rec.notificationType === "quota_auto_resume_fired" ? "info" : "warning", title: `${tool} at the limit`, message: `${name} ${wait}.` };
     return { kind: "warning", title: `${tool} is waiting`, message: `${name} needs your input.` };
@@ -443,7 +450,7 @@ export function readEvents(file: string): HookEventRecord[] {
 
 /**
  * Sessions waiting on the user: their last hook event is `Notification` (a
- * permission prompt, or a long wait for input) or `StopFailure` (the turn died
+ * permission prompt or a question, not the idle reminder) or `StopFailure` (the turn died
  * on an error — a limit, a lapsed login) and the transcript has not been
  * written since — a reply or an approval writes to it. `Stop` alone is not
  * waiting: it ends every turn. Neither is the host waiting out a limit by itself.
@@ -456,7 +463,7 @@ export function waitingSessions(events: readonly HookEventRecord[], mtimeMs: (se
   for (const [id, e] of last) {
     const written = mtimeMs(id);
     // Two seconds of slack: the notification and the transcript line that led to it land together.
-    const asks = e.event === "StopFailure" || (e.event === "Notification" && !(e.notificationType && HOST_WAIT_TYPES.has(e.notificationType)));
+    const asks = e.event === "StopFailure" || (e.event === "Notification" && notificationAsks(e.notificationType));
     if (asks && written !== null && Date.parse(e.at) + 2000 >= written) out.set(id, e.at);
   }
   return out;
