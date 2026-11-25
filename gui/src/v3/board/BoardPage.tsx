@@ -9,7 +9,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { ChevronDown, Swords, Users, Workflow as WorkflowIcon, X } from "lucide-react";
 
 import { cn } from "../../lib/utils.js";
-import { Anchored, Menu } from "../menus.js";
+import { ago } from "../kit.js";
+import { Anchored } from "../menus.js";
 import { ArenaBoard } from "./ArenaBoard.js";
 import { CouncilBoard } from "./CouncilBoard.js";
 import { WorkflowBoard } from "./WorkflowBoard.js";
@@ -38,6 +39,24 @@ export function boardTabs(o: Orchestration): { id: BoardTab; label: string; icon
 export function splitTabs<T extends { id: BoardTab; live: boolean }>(tabs: readonly T[], current: BoardTab | null): { shown: T[]; finished: T[] } {
   const shown = tabs.filter((t) => t.live || t.id === current);
   return { shown, finished: tabs.filter((t) => !shown.includes(t)) };
+}
+
+/** A finished run's second line and when it last moved, for the flyout. Pure. */
+export function tabDetail(o: Orchestration, id: BoardTab): { detail?: string; at?: number } {
+  const time = (iso?: string) => (iso ? Date.parse(iso) || undefined : undefined);
+  if (id.startsWith("arena:")) {
+    const b = o.brackets.find((x) => `arena:${x.run}` === id);
+    if (!b) return {};
+    const end = b.champion ? `champion ${b.champion}` : `round ${b.round}`;
+    return { detail: [b.taskTitle, end].filter(Boolean).join(" · "), at: time(b.updatedAt) };
+  }
+  if (id === "workflows") {
+    const n = o.workflows.length;
+    return { detail: `${n} run${n === 1 ? "" : "s"} · ${o.workflows.map((w) => w.name).join(", ")}`, at: Math.max(0, ...o.workflows.map((w) => time(w.startedAt) ?? 0)) || undefined };
+  }
+  const c = o.councils.find((x) => `council:${x.name}` === id);
+  if (!c) return {};
+  return { detail: [c.kind === "debate" ? "Debate" : "Run", c.ask ?? c.decision].filter(Boolean).join(" · "), at: time(c.updatedAt) };
 }
 
 /** The tab to show: the asked one when it exists, else the first. Pure. */
@@ -120,7 +139,7 @@ export function BoardPage({ sessionKey, title, live, focus, read, readLine, tran
   else body = <WorkflowBoard runs={data.workflows} onAgent={transcript ? onAgent : undefined} />;
 
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-ac-bg">
+    <div className="relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-ac-bg">
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-ac-line px-3" role="tablist" aria-label={`Board of ${title}`}>
         <span className="mr-2 max-w-[220px] truncate text-[12px] text-ac-muted">{title}</span>
         {split.shown.map((t) => {
@@ -134,25 +153,10 @@ export function BoardPage({ sessionKey, title, live, focus, read, readLine, tran
           );
         })}
         {split.finished.length > 0 && (
-          <div className="relative ml-auto shrink-0">
-            <button type="button" data-popover-trigger="" aria-expanded={moreOpen} aria-haspopup="menu" onClick={() => setMoreOpen((o) => !o)} className={cn("inline-flex h-7 items-center gap-1 rounded-md px-2 text-[12px] text-ac-soft hover:bg-ac-raise hover:text-ac-text", moreOpen && "bg-ac-raise text-ac-text")}>
-              {split.finished.length} finished
-              <ChevronDown className={cn("size-3.5 transition-transform", moreOpen && "rotate-180")} />
-            </button>
-            {moreOpen && (
-              <Anchored onClose={() => setMoreOpen(false)} className="absolute right-0 top-[calc(100%+4px)] z-20">
-                <Menu
-                  label="Finished runs"
-                  width={300}
-                  autoFocus
-                  items={split.finished.map((t) => {
-                    const Icon = ICON[t.icon];
-                    return { id: t.id, label: t.label, icon: <Icon />, onClick: () => (setTab(t.id), setMoreOpen(false)) };
-                  })}
-                />
-              </Anchored>
-            )}
-          </div>
+          <button type="button" data-popover-trigger="" aria-expanded={moreOpen} aria-haspopup="dialog" onClick={() => setMoreOpen((o) => !o)} className={cn("ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[12px] text-ac-soft hover:bg-ac-raise hover:text-ac-text", moreOpen && "bg-ac-raise text-ac-text")}>
+            {split.finished.length} finished
+            <ChevronDown className={cn("size-3.5 transition-transform", moreOpen && "rotate-180")} />
+          </button>
         )}
         {error && data && <span className={cn("shrink-0 text-[11px] text-ac-warn-text", split.finished.length ? "ml-2" : "ml-auto")}>last read failed — showing the previous state</span>}
       </div>
@@ -171,6 +175,40 @@ export function BoardPage({ sessionKey, title, live, focus, read, readLine, tran
           </aside>
         )}
       </div>
+      {moreOpen && data && split.finished.length > 0 && (
+        // A full-height sheet on the right, like Needs you and History (owner, 2026-11-25).
+        <Anchored onClose={() => setMoreOpen(false)} className="absolute bottom-0 right-0 top-10 z-20">
+          <div role="dialog" aria-label="Finished runs" className="flex h-full w-[380px] flex-col border-l border-ac-line2 bg-ac-panel" style={{ boxShadow: "var(--ac-shadow)" }}>
+            <div className="flex h-10 shrink-0 items-center gap-2 px-4">
+              <span className="ac-caps">Finished runs</span>
+              <span className="text-[11px] text-ac-muted">{split.finished.length}</span>
+              <button type="button" aria-label="Close" onClick={() => setMoreOpen(false)} className="ml-auto inline-flex size-6 items-center justify-center rounded-md text-ac-muted hover:bg-ac-raise hover:text-ac-text">
+                <X className="size-3.5" />
+              </button>
+            </div>
+            <ol className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+              {split.finished.map((t) => {
+                const Icon = ICON[t.icon];
+                const { detail, at } = tabDetail(data, t.id);
+                return (
+                  <li key={t.id}>
+                    <button type="button" data-finished-run="" onClick={() => (setTab(t.id), setMoreOpen(false))} className="grid w-full grid-cols-[16px_minmax(0,1fr)_auto] items-start gap-x-2.5 rounded-md px-2 py-1.5 text-left hover:bg-ac-raise">
+                      <span className="flex h-[18px] items-center text-ac-muted">
+                        <Icon className="size-3.5" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-[12.5px] leading-[18px] text-ac-text">{t.label}</span>
+                        {detail && <span className="block truncate text-[11px] text-ac-muted">{detail}</span>}
+                      </span>
+                      {at != null && <span className="whitespace-nowrap text-[11px] leading-[18px] text-ac-faint">{ago(Date.now() - at)}</span>}
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        </Anchored>
+      )}
     </div>
   );
 }
