@@ -195,6 +195,8 @@ describe("BoardPage", () => {
     expect(pickTab(tabs, "workflow:wf_1")).toBe("workflows");
     expect(pickTab(tabs, "arena:demo")).toBe("arena:demo");
     expect(pickTab(tabs, "arena:gone")).toBe("council:live");
+    expect(pickTab(tabs, "council")).toBe("council:live");
+    expect(pickTab(boardTabs(orch()), "council")?.startsWith("council:")).toBe(true);
   });
 
   it("reads the board, draws the focused tab, and opens an agent's transcript beside it", async () => {

@@ -63,6 +63,8 @@ export function tabDetail(o: Orchestration, id: BoardTab): { detail?: string; at
 export function pickTab(tabs: readonly { id: BoardTab }[], want: string | undefined): BoardTab | null {
   if (want && tabs.some((t) => t.id === want)) return want as BoardTab;
   if (want?.startsWith("workflow:") && tabs.some((t) => t.id === "workflows")) return "workflows";
+  // The tree's (and the Councils page's) one council row: the table now, else the newest council.
+  if (want === "council") return tabs.find((t) => t.id === "council:live")?.id ?? tabs.find((t) => t.id.startsWith("council:"))?.id ?? tabs[0]?.id ?? null;
   return tabs[0]?.id ?? null;
 }
 

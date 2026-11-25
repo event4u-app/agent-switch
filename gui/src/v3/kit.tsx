@@ -270,5 +270,5 @@ export function inShell(el: Element): { top: number; left: number; bottom: numbe
   const box = shell?.getBoundingClientRect();
   if (!shell || !box) return { top: r.top, left: r.left, bottom: r.bottom, right: r.right, width: r.width };
   const k = shell.offsetWidth ? box.width / shell.offsetWidth || 1 : 1;
-  return { top: (r.top - box.top) / k, left: (r.left - box.left) / k, bottom: (r.bottom - box.top) / k, right: (r.right - box.left) / k, width: shell.offsetWidth };
+  return { top: (r.top - box.top) / k, left: (r.left - box.left) / k, bottom: (r.bottom - box.top) / k, right: (r.right - box.left) / k, width: shell.offsetWidth || box.width };
 }
