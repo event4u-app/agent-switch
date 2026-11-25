@@ -792,7 +792,7 @@ export function V3Window({
               ) : null
             }
             accountWhy={moveWhy(activeSession)}
-            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => openMove(activeSession), model: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "model" ? null : { model: activeSession, x, chip: "model" })), thinking: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "thinking" ? null : { model: activeSession, x, chip: "thinking" })), menu: (el, moved) => setOverlay((o) => (o && typeof o === "object" && "menu" in o ? null : { menu: activeSession, at: anchorUnder(el), moved })) }}
+            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => openMove(activeSession), model: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "model" ? null : { model: activeSession, x, chip: "model" })), thinking: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "thinking" ? null : { model: activeSession, x, chip: "thinking" })), menu: (el, moved) => setOverlay((o) => (o && typeof o === "object" && "menu" in o ? null : { menu: activeSession, at: anchorUnder(el), moved })), ...((data.menu ? data.menu(activeSession) : SESSION_MENU).includes("End…") && !itemWhy(activeSession, "End…") ? { end: () => sessionItem(activeSession, "End…") } : {}) }}
           />
           {engineBanner}
           <HintStrip

@@ -326,7 +326,7 @@ function fitChips(box: HTMLElement): BarChipId[] {
   return moved;
 }
 
-export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; menuOpen?: boolean; /** Why the account chip cannot open the decision sheet now; absent: it can. */ accountWhy?: string | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; /** Unused since model and thinking share one chip; kept so callers need not change. */ thinking?: (x: number) => void; /** `moved`: the chips that left the bar, so ⋯ offers them. */ menu: (trigger: HTMLElement, moved: BarChipId[]) => void } }) {
+export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; menuOpen?: boolean; /** Why the account chip cannot open the decision sheet now; absent: it can. */ accountWhy?: string | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; /** Unused since model and thinking share one chip; kept so callers need not change. */ thinking?: (x: number) => void; /** `moved`: the chips that left the bar, so ⋯ offers them. */ menu: (trigger: HTMLElement, moved: BarChipId[]) => void; /** End… one click away (owner, 2026-11-25): a red ✕ beside ⋯; absent: none. */ end?: () => void } }) {
   const t = tone(s.account.fiveH, s.account.protect);
   // 8.6: a chip that does not fit leaves the bar and moves into ⋯, never clipped.
   const clip = useRef<HTMLDivElement>(null);
@@ -430,6 +430,11 @@ export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { 
       <IconButton {...POPOVER_TRIGGER} label="Session actions" aria-haspopup="menu" aria-expanded={!!menuOpen} className="size-7" onClick={(e) => on.menu(e.currentTarget, moved)}>
         <Ellipsis />
       </IconButton>
+      {on.end && (
+        <IconButton label="End session…" className="size-7 text-ac-alert-text hover:bg-ac-alert-tint hover:text-ac-alert-text" onClick={on.end}>
+          <X />
+        </IconButton>
+      )}
     </div>
   );
 }
