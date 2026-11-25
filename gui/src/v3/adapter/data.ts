@@ -497,6 +497,8 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     if (quietFor > OLDER_MS) return "older";
     return !(r.live || r.recentlyActive) || quietFor >= doneAfter ? "done" : "active";
   };
+  // Keys the sidebar files under Done today or Older though they still run, for the table's tabs.
+  const endedLive = new Set<string>();
   const sessions: RowSession[] = roots.map((r) => {
     const key = sessionKey(r);
     const pr = prsOf(r)[0];
@@ -506,6 +508,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     const view = r.live && own.state === "idle" && workRunsUnder(children) ? { ...own, state: "working" as const, stateSource: "children" as const } : own;
     const needsYou = needing.has(key) || children.some((c) => c.needsYou);
     const when = whenOf(r, view.state, needsYou);
+    if (when !== "active" && r.live) endedLive.add(key);
     return {
       key,
       title: titleOf(r),
@@ -545,6 +548,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       title: titleOf(r),
       state: stateOf(r),
       live: r.live,
+      ...(endedLive.has(sessionKey(r)) ? { ended: true } : {}),
       tool: r.provider === "codex" ? "codex" : r.provider === "antigravity" ? "antigravity" : "claude",
       account: { name: r.profile, color: colorOf(r) },
       branch: r.git?.branch ?? null,

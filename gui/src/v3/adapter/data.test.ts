@@ -7,6 +7,7 @@ import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
 import { statusGroup } from "../sessions.js";
 import { chatStart, childrenOf, decisionFor, doneToday, hasOpenPr, initialPlan, nextStep, sessionKey, startCommand, startKey, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
 import { emptyFeeds, type V3Feeds } from "./useFeeds.js";
+import { inStatus } from "../pages.js";
 
 const NOW = Date.parse("2026-11-03T15:00:00");
 
@@ -156,6 +157,25 @@ describe("toV3Data", () => {
     // The time is a setting: at 30 minutes the 20-minute-quiet session is still active.
     const later = toV3Data(vmWith([account("work")], rows), emptyFeeds(), env({ doneAfterMs: 30 * 60_000 }));
     expect(at(later, "quiet")).toBe("active");
+  });
+
+  it("All sessions lists under Done today and Older exactly the sessions the sidebar counts there", () => {
+    const H = 3600_000;
+    const rows = [
+      row("busy", { mtimeMs: NOW - 2 * 60_000 }),
+      row("quiet", { mtimeMs: NOW - 20 * 60_000 }),
+      row("stale", { mtimeMs: NOW - 30 * H }),
+      row("ended", { live: false, mtimeMs: NOW - 60_000 }),
+    ];
+    const d = toV3Data(vmWith([account("work")], rows), emptyFeeds(), env());
+    const midnight = new Date(NOW).setHours(0, 0, 0, 0);
+    const sidebar = (tab: "today" | "older") =>
+      d.sessions.filter((s) => (s.doneToday || s.older) && (tab === "today") === (s.lastActiveMs! >= midnight)).map((s) => s.key).sort();
+    const listed = (tab: "today" | "older") => d.table.filter((s) => inStatus(s, tab, NOW)).map((s) => s.key).sort();
+    expect(listed("today")).toEqual(sidebar("today"));
+    expect(listed("older")).toEqual(sidebar("older"));
+    expect(listed("today")).toContain("claude/work/quiet");
+    expect(d.table.filter((s) => inStatus(s, "idle", NOW)).map((s) => s.key)).toEqual(["claude/work/busy"]);
   });
 
   it("an account's routines reach its Accounts-page row; absent stays absent", () => {
