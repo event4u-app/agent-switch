@@ -168,3 +168,25 @@ export const BOARD_FIXTURE: Orchestration = {
     },
   ],
 };
+
+/**
+ * The same tournament, finished (owner, 2026-11-25: a board for the win): round 3
+ * decided, the final L003 vs L002, L003 champion with its shine.
+ */
+const WON_MATCHES: BracketMatch[] = [
+  ...MATCHES.filter((x) => x.round < 3),
+  m("R3M1", "L003", "L001", s(9, 9, 8, 8, 8), s(8, 8, 8, 9, 9), { appeal: "declined" }),
+  m("R3M2", "L002", "L010", s(8, 9, 9, 8, 8), s(8, 8, 7, 8, 8), { appeal: "declined" }),
+  m("R4M1", "L003", "L002", s(9, 9, 9, 8, 8), s(9, 8, 8, 8, 8), { appeal: "declined", notes: ["final"] }),
+];
+const WON_LINES: BracketLine[] = LINES.map((l) =>
+  l.id === "L001" ? out("L001", ["L003"], "R3M1") : l.id === "L010" ? out("L010", ["L002"], "R3M2") : l.id === "L002" ? out("L002", ["L003"], "R4M1") : l,
+);
+export const BOARD_WON: Orchestration = {
+  ...BOARD_FIXTURE,
+  live: false,
+  councilRunning: undefined,
+  workflows: BOARD_FIXTURE.workflows.map((w) => (w.status === "running" ? { ...w, status: "completed" as const } : w)),
+  brackets: BOARD_FIXTURE.brackets.map((b) => ({ ...b, round: 4, phase: "done", champion: "L003", lines: WON_LINES, matches: WON_MATCHES, log: [...b.log, "R3M1 L003 beats L001", "R3M2 L002 beats L010", "final R4M1: L003 beats L002 — champion L003"] })),
+  councils: BOARD_FIXTURE.councils.map((c) => ({ ...c, open: false, live: c.live ? { ...c.live, listening: false } : c.live })),
+};

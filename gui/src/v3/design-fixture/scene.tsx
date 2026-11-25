@@ -17,7 +17,7 @@ import { ChatTimeline } from "../chat.js";
 import { Composer } from "../composer.js";
 import { EarlierNotShown } from "../subagent-view.js";
 import { BoardPage } from "../board/BoardPage.js";
-import { BOARD_FIXTURE } from "./board-fixture.js";
+import { BOARD_FIXTURE, BOARD_WON } from "./board-fixture.js";
 import type { AsEvent } from "../timeline.js";
 import CHAT from "../fixtures/timeline-claude-2.1.316.json";
 import { ToolsPage, allNeeds } from "../tools.js";
@@ -345,10 +345,12 @@ export interface SceneOptions {
   platform?: "mac" | "other";
   /** The window's remembered view (density, order, grouping), so a board names its state instead of toggling the default. */
   layout?: Partial<WindowLayout>;
+  /** The orchestration boards read: the running fixture, or the same arena won. */
+  board?: "live" | "won";
 }
 
 /** One board: the real v3 window, or one of the screens that live outside it, on fixture data. */
-export function Scene({ view = "main", theme = "darcula", accent = "theme", health, away, chat, platform, layout }: SceneOptions) {
+export function Scene({ view = "main", theme = "darcula", accent = "theme", health, away, chat, platform, layout, board }: SceneOptions) {
   // The Terminal / Chat switch is live: the window asks for a view, the fixture keeps it per session.
   const [views, setViews] = useState<Record<string, "terminal" | "chat">>({});
   const inChat = (key: string) => (views[key] ?? (chat ? "chat" : "terminal")) === "chat";
@@ -359,7 +361,7 @@ export function Scene({ view = "main", theme = "darcula", accent = "theme", heal
   const slots: V3Slots = {
     // A subagent's own transcript, never its parent's; the end of a long run, as the real view reads it.
     subagent: (_parent, agentId) => <ChatTimeline events={SUBAGENT_RUNS[agentId] ?? []} notice={<EarlierNotShown />} />,
-    board: (key, focus) => <BoardPage sessionKey={key} title={SESSIONS.find((x) => x.key === key)?.title ?? key} live focus={focus} read={async () => BOARD_FIXTURE} readLine={async (_k, run, id) => `# ${id}\n\n${run}: the line's rationale, then its diff.\n\n\`\`\`diff\n+ export function signBundle(app: string): SignResult {\n\`\`\`\n`} transcript={(agentId) => <ChatTimeline events={SUBAGENT_RUNS[agentId] ?? SUBAGENT_RUNS.c2} notice={<EarlierNotShown />} />} speak={async () => undefined} />,
+    board: (key, focus) => <BoardPage sessionKey={key} title={SESSIONS.find((x) => x.key === key)?.title ?? key} live focus={focus} read={async () => (board === "won" ? BOARD_WON : BOARD_FIXTURE)} readLine={async (_k, run, id) => `# ${id}\n\n${run}: the line's rationale, then its diff.\n\n\`\`\`diff\n+ export function signBundle(app: string): SignResult {\n\`\`\`\n`} transcript={(agentId) => <ChatTimeline events={SUBAGENT_RUNS[agentId] ?? SUBAGENT_RUNS.c2} notice={<EarlierNotShown />} />} speak={async () => undefined} />,
     review: (key, focus) => (
       <Review
         title={SESSIONS.find((x) => x.key === key)?.title ?? key}

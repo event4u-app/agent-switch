@@ -46,6 +46,8 @@ export const BOARDS: Record<string, Board> = {
   subagent: { steps: [{ click: "Show 3 subagents" }, { click: "general-purpose · migrate JSON stores" }] },
   // The board of a session that runs an arena: the tournament, its council, its workflow runs.
   arena: { steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }] },
+  // The same arena won: the champion's card and the header shine.
+  "arena-win": { scene: { board: "won" }, steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }] },
   "arena-match": { steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }, { click: "R3M1" }] },
   "arena-line": { steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }, { click: "L005" }] },
   council: { steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }, { click: "Council · 20261124T1300Z-tcc" }] },
