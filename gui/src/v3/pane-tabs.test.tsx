@@ -63,17 +63,12 @@ describe("the Sessions window's tabs", () => {
     expect(win.queryByText(/more ›/)).toBeNull();
   });
 
-  it("the filter at the foot narrows the open tab; Esc clears it", () => {
+  it("the pane has no filter of its own: the title bar's search finds sessions", () => {
     const win = mount();
-    paneTab("Other");
-    const box = win.getByLabelText("Filter sessions");
-    fireEvent.change(box, { target: { value: "nothing-like-it" } });
-    expect(win.queryByText("Checkout flow")).toBeNull();
-    fireEvent.keyDown(box, { key: "Escape" });
-    expect(win.getByText("Checkout flow")).toBeTruthy();
+    expect(win.queryByLabelText("Filter sessions")).toBeNull();
   });
 
-  it("Done today and Older sit side by side under the filter and open All sessions", () => {
+  it("Done today and Older sit side by side at the foot and open All sessions", () => {
     const win = mount();
     const done = win.getByTitle("Open All sessions · Done today");
     expect(done.textContent).toBe("Done today1");

@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "../lib/utils.js";
-import { ArrowLeftRight, ArrowRightToLine, ClipboardCopy, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, SquareTerminal, Search, Swords, Unplug, Users, Gavel, Wrench, X } from "lucide-react";
+import { ArrowLeftRight, ArrowRightToLine, ClipboardCopy, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, SquareTerminal, Swords, Unplug, Users, Gavel, Wrench, X } from "lucide-react";
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
 import type { ActivityEvent, IdentityColor, ToolEntry } from "../vm/types.js";
@@ -277,7 +277,6 @@ export function V3Window({
   const [focusedNeed, setFocusedNeed] = useState<string | null>(null);
   // Opens on Running, as alternative B shows it (owner, 2026-11-25); ⌘J brings Needs you to the front.
   const [paneTab, setPaneTab] = useState<"you" | "running" | "other">("running");
-  const [paneQuery, setPaneQuery] = useState("");
 
   const lastActiveOf = (k: string) => data.table.find((t) => t.key === k)?.lastActiveMs ?? null;
   const [focusChild, setFocusChild] = useState<string | null>(null);
@@ -877,10 +876,9 @@ export function V3Window({
   const pinned = new Set(data.library.filter((l) => l.pinned).map((l) => l.key));
   // The pane's tabs and filter (owner, 2026-11-25, alternative B + A's search).
   const liveSessions = (pinnedOnly ? data.sessions.filter((x) => pinned.has(x.key)) : data.sessions).filter((x) => !x.doneToday && !x.older);
-  const q = paneQuery.trim().toLowerCase();
-  const hit = (...parts: (string | null | undefined)[]) => !q || parts.some((x) => x?.toLowerCase().includes(q));
-  const found = liveSessions.filter((x) => hit(x.title, x.branch, x.account.name, x.key));
-  const foundNeeds = needs.filter((n) => hit(n.who, n.what, n.detail, n.subject));
+  // No filter of its own: the search in the title bar finds sessions (owner, 2026-11-25).
+  const found = liveSessions;
+  const foundNeeds = needs;
   const sessionsWindow = (
     <aside aria-label="Sessions window" data-loaded={data.loading ? "false" : "true"} aria-busy={data.loading || undefined} className="flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-ac-line bg-ac-panel">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-ac-line px-3">
@@ -895,7 +893,7 @@ export function V3Window({
         </span>
       </div>
       {/* Alternative B (owner, 2026-11-25): three tabs instead of stacked zones — Needs you, Running, Other —
-          one list at a time; the search from alternative A sits at the foot, over Done today and Older. */}
+          one list at a time; Done today and Older at the foot. The title bar's search finds sessions. */}
       <div className="shrink-0 px-2.5 pt-2" data-pane-tabs="">
         <Segmented
           label="Show"
@@ -955,16 +953,7 @@ export function V3Window({
         />
         )}
       </div>
-      <div data-pane-foot="" className="shrink-0 space-y-1.5 border-t border-ac-line px-2.5 py-2">
-        <label className="flex h-7 items-center gap-2 rounded-md border border-ac-line2 bg-ac-bg px-2 text-[12px] text-ac-muted focus-within:border-ac-brand-line">
-          <Search aria-hidden className="size-3.5 shrink-0" />
-          <input aria-label="Filter sessions" placeholder="Filter…" value={paneQuery} onChange={(e) => setPaneQuery(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setPaneQuery("")} className="min-w-0 flex-1 bg-transparent text-ac-text shadow-none outline-none placeholder:text-ac-faint focus:outline-none focus-visible:outline-none" />
-          {paneQuery && (
-            <button type="button" aria-label="Clear filter" onClick={() => setPaneQuery("")} className="inline-flex size-4 items-center justify-center rounded text-ac-muted hover:text-ac-text">
-              <X className="size-3" />
-            </button>
-          )}
-        </label>
+      <div data-pane-foot="" className="shrink-0 border-t border-ac-line px-2.5 py-2">
         <div className="grid grid-cols-2 gap-1.5">
           {endedRows(data.sessions, data.nowMs, lastActiveOf).map((g) => (
             <button key={g.id} type="button" data-done-groups="" onClick={() => (setTableTab((t) => ({ status: g.id === "Older" ? "older" : "today", n: t.n + 1 })), openPage("sessions-table"))} title={`Open All sessions · ${g.id}`} className="flex h-7 items-center justify-between gap-1.5 rounded-md bg-ac-raise px-2.5 text-[12px] text-ac-soft hover:text-ac-text">
