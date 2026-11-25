@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "../lib/utils.js";
-import { ArrowLeftRight, ArrowRightToLine, ClipboardCopy, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, SquareTerminal, Swords, Unplug, Wrench, X } from "lucide-react";
+import { ArrowLeftRight, ArrowRightToLine, ClipboardCopy, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, SquareTerminal, Swords, Unplug, Users, Gavel, Wrench, X } from "lucide-react";
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
 import type { ActivityEvent, IdentityColor, ToolEntry } from "../vm/types.js";
@@ -23,6 +23,7 @@ import { answeredThere, NeedsZone, type AwayDigest, type NeedItem } from "./need
 import { limitToOpen, markLimitOpened, openedLimits, wasOpened } from "./adapter/limit-auto.js";
 import { accountOfKey } from "../vm/switch-requests.js";
 import { HistorySheet } from "./history.js";
+import { RunsPage, runRows, runningCounts } from "./runs.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession, type StatusTab } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
@@ -161,7 +162,11 @@ const PAGE_TAB: Record<PageId | "sessions-table", { label: string; icon: ReactNo
   tools: { label: "Tools", icon: <Wrench className="size-3.5" /> },
   settings: { label: "Settings", icon: <Settings className="size-3.5" /> },
   "sessions-table": { label: "All sessions", icon: <ListTree className="size-3.5" /> },
+  arenas: { label: "Arenas", icon: <Swords className="size-3.5" /> },
+  councils: { label: "Councils", icon: <Users className="size-3.5" /> },
+  panels: { label: "Panels", icon: <Gavel className="size-3.5" /> },
 };
+const RUN_KIND = { arenas: "arena", councils: "council", panels: "panel" } as const;
 
 /** A page id the window can (re)open: a known page, or the review of a session that still exists. */
 function isKnownPage(p: string, sessions: ReadonlySet<string>): boolean {
@@ -525,6 +530,7 @@ export function V3Window({
   };
 
   const activeSession = active && !active.startsWith("page:") ? active : null;
+  const runs = runRows(data.sessions);
   const bar = activeSession ? data.bar(activeSession) : null;
   const next = activeSession && !dismissed.has(activeSession) ? data.next(activeSession) : null;
   const tabs: TabItem[] = strip.order.map((id): TabItem => {
@@ -582,6 +588,7 @@ export function V3Window({
     // 8.6: the table in the sidebar's order (its sort), ended sessions after it.
     if (p === "sessions-table") return <AllSessionsPage key={tableTab.n} status={tableTab.status} sessions={data.table} order={sortLive(data.sessions, sortBy, lastActiveOf).map((row) => row.key)} group={tableGroup ?? (groupBy === "project" ? "project" : "none")} onGroup={setTableGroup} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
     if (p === "tools") return slots.tools;
+    if (p === "arenas" || p === "councils" || p === "panels") return <RunsPage key={p} kind={RUN_KIND[p]} rows={runs} onOpen={(id) => openBoard?.(id)} />;
     return (
       <SettingsPage current={section} onSection={setSection}>
         {section === "Appearance" ? (
@@ -1048,6 +1055,8 @@ export function V3Window({
       inbox={{ count: needs.length, ciFailing: needs.some((n) => n.kind === "ci") }}
       inboxOpen={overlay === "inbox"}
       historyOpen={overlay === "history"}
+      running={runningCounts(runs)}
+      activePage={active?.startsWith("page:") ? active.slice(5) : null}
       needsYou={needs.length > 0}
       blocker={!!next}
       rightWhy={activeSession ? null : "no session in this tab"}

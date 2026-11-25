@@ -84,6 +84,7 @@ const SESSIONS: RowSession[] = [
       { id: "k1", label: "Council seat · architect", kind: "council-seat", state: "done", source: "lineage" },
       { id: "k2", label: "Council seat · skeptic", kind: "council-seat", state: "working", source: "lineage" },
       { id: "k3", label: "Council seat · release manager", kind: "council-seat", state: "working", source: "lineage" },
+      { id: "board:claude/work/s-council|council", label: "Council · live", kind: "council-board", state: "working", source: "files" },
     ] }),
   S({ key: "claude/work/s-arena", title: "Signing arena: stable TCC identity", state: "working", branch: "dev/v3",
     children: [
@@ -95,8 +96,10 @@ const SESSIONS: RowSession[] = [
         ] },
       { id: "board:claude/work/s-arena|council", label: "Council", kind: "council-board", state: "done", source: "files" },
     ] }),
-  S({ key: "claude/side/s-wedge", title: "Fix wedge on daemon restart", state: "working", account: { name: "side", nearLimit: true }, branch: "fix/wedge-restart", pr: { number: 88, ci: "SUCCESS", mergeable: "MERGEABLE" } }),
-  S({ key: "claude/personal/s-notes", title: "Release notes 2.11", state: "done", account: { name: "personal", nearLimit: false }, branch: "docs/release-2.11", pr: { number: 140, ci: "SUCCESS", mergeable: "MERGEABLE" }, doneToday: true }),
+  S({ key: "claude/side/s-wedge", title: "Fix wedge on daemon restart", state: "working", account: { name: "side", nearLimit: true }, branch: "fix/wedge-restart", pr: { number: 88, ci: "SUCCESS", mergeable: "MERGEABLE" },
+    children: [{ id: "board:claude/side/s-wedge|workflow:wf_panel_wedge", label: "panel-decide · 2/4 · Lenses", kind: "workflow", state: "working", source: "files" }] }),
+  S({ key: "claude/personal/s-notes", title: "Release notes 2.11", state: "done", account: { name: "personal", nearLimit: false }, branch: "docs/release-2.11", pr: { number: 140, ci: "SUCCESS", mergeable: "MERGEABLE" }, doneToday: true,
+    children: [{ id: "board:claude/personal/s-notes|workflow:wf_panel_notes", label: "panel-review · 25/25", kind: "workflow", state: "done", source: "files" }] }),
   S({ key: "claude/personal/s-checkout", title: "Checkout flow accessibility", state: "needs-you", account: { name: "personal", nearLimit: false }, branch: "a11y/checkout", pr: { number: 311, ci: "FAILURE", mergeable: "CONFLICTING" }, needsYou: true,
     children: [{ id: "u1", label: "claude --print in /tmp/tmp.k2J9", kind: "unknown", state: "done", source: "unknown" }] }),
   // Ended yesterday: the status grouping's "Older" group.
