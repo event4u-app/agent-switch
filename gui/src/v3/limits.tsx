@@ -6,7 +6,7 @@
  * reference boards; nothing here ever switches an account.
  */
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Segmented } from "../ui/Segmented.js";
 import { cn } from "../lib/utils.js";
 import type { IdentityColor } from "../vm/types.js";
@@ -174,6 +174,19 @@ export function LimitsStrip({ accounts, nowMs, openKey, currentKey, onOpen, onSi
   const [picked, setPicked] = useState<"claude" | "codex" | null>(null);
   const tab = picked && tools.includes(picked) ? picked : currentTool && tools.includes(currentTool) ? currentTool : (tools[0] ?? "claude");
   const shown = tools.length > 1 ? accounts.filter((a) => a.tool === tab) : [...accounts.filter((a) => a.tool === "claude"), ...accounts.filter((a) => a.tool === "codex")];
+  // Picking another session follows its account (owner, 2026-11-25): the switch goes back to that
+  // session's tool, and the box scrolls just far enough to show its row.
+  useEffect(() => setPicked(null), [currentKey]);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = box.current;
+    const row = el?.querySelector<HTMLElement>("[data-current]");
+    if (!el || !row) return;
+    const top = row.offsetTop - el.offsetTop - el.clientTop;
+    const pad = 4;
+    const to = top < el.scrollTop + pad ? top - pad : top + row.offsetHeight > el.scrollTop + el.clientHeight - pad ? top + row.offsetHeight - el.clientHeight + pad : null;
+    if (to != null) el.scrollTo?.({ top: Math.max(0, to), behavior: "smooth" });
+  }, [currentKey, tab]);
   return (
     <section aria-label="Limits" className="relative shrink-0 border-t border-ac-line px-1.5 pb-1.5 pt-1.5">
       {tools.length > 1 && (
@@ -203,7 +216,7 @@ export function LimitsStrip({ accounts, nowMs, openKey, currentKey, onOpen, onSi
         </span>
         <span className="col-span-3 justify-self-end text-ac-muted">resets</span>
       </div>
-      <div data-limit-rows="" role="region" aria-label={tools.length > 1 ? `${tab === "claude" ? "Claude" : "Codex"} limits` : undefined} className="mx-1 h-[106px] overflow-y-auto rounded-md border border-ac-line bg-ac-bg p-1">
+      <div ref={box} data-limit-rows="" role="region" aria-label={tools.length > 1 ? `${tab === "claude" ? "Claude" : "Codex"} limits` : undefined} className="mx-1 h-[106px] overflow-y-auto rounded-md border border-ac-line bg-ac-bg p-1">
         {shown.map((a) => (
           <LimitRow key={a.key} a={a} nowMs={nowMs} open={a.key === openKey} current={a.key === currentKey} toolShown={tools.length > 1} onOpen={onOpen} onSignIn={onSignIn} />
         ))}
