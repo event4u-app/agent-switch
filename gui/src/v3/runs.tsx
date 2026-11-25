@@ -61,7 +61,8 @@ type Show = "running" | "finished" | "all";
 export function RunsPage({ kind, rows, onOpen }: { kind: RunKind; rows: readonly RunRow[]; onOpen: (id: string) => void }) {
   const mine = rows.filter((r) => r.kind === kind);
   const live = mine.filter((r) => r.running).length;
-  const [show, setShow] = useState<Show>(live ? "running" : "all");
+  // Owner, 2026-11-25: a run page opens on what runs now, also when nothing does; finished is one click away.
+  const [show, setShow] = useState<Show>("running");
   const [q, setQ] = useState("");
   const meta = RUN_PAGE[kind];
   const Icon = meta.icon;
@@ -92,7 +93,7 @@ export function RunsPage({ kind, rows, onOpen }: { kind: RunKind; rows: readonly
             <ChevronRight className="size-3.5 text-ac-faint" />
           </button>
         ))}
-        {visible.length === 0 && <div className="px-3 py-8 text-center text-xs text-ac-muted">{mine.length ? `No ${meta.one} matches.` : show === "running" ? `No ${meta.one} runs right now.` : `No ${meta.one} has run yet.`}</div>}
+        {visible.length === 0 && <div className="px-3 py-8 text-center text-xs text-ac-muted">{show === "running" && !live && !q ? `No ${meta.one} runs right now.` : mine.length ? `No ${meta.one} matches.` : `No ${meta.one} has run yet.`}</div>}
       </Table>
     </PageBody>
   );

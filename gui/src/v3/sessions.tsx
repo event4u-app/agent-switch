@@ -199,11 +199,19 @@ export function attention(s: RowSession): { text: string; tone: AttentionTone }[
   return out;
 }
 
-/** The children count's glyph: swords when an arena runs under the row, the workflow mark for runs only, else the subagent bot. */
+/** Working descendants themselves, any depth. Pure. */
+const runningKids = (children: readonly ChildModel[]): ChildModel[] => children.flatMap((c) => [...(c.state === "working" ? [c] : []), ...runningKids(c.children ?? [])]);
+
+/**
+ * The children count's glyph names what the count counts — the running ones: swords when an arena
+ * runs under the row, the gavel for panels only, the workflow mark for runs only, else the subagent bot.
+ * A finished arena beside a running subagent is the bot.
+ */
 function ChildrenIcon({ kids }: { kids: readonly ChildModel[] }) {
-  if (kids.some((k) => k.kind === "arena-board")) return <Swords className="size-3.5" />;
-  if (kids.length && kids.every((k) => k.kind === "workflow" && /panel/i.test(k.label))) return <Gavel className="size-3.5" />;
-  if (kids.length && kids.every((k) => BOARD_KINDS.has(k.kind))) return <WorkflowIcon className="size-3.5" />;
+  const live = runningKids(kids);
+  if (live.some((k) => k.kind === "arena-board")) return <Swords className="size-3.5" />;
+  if (live.length && live.every((k) => k.kind === "workflow" && /panel/i.test(k.label))) return <Gavel className="size-3.5" />;
+  if (live.length && live.every((k) => BOARD_KINDS.has(k.kind))) return <WorkflowIcon className="size-3.5" />;
   return <Bot className="size-3.5" />;
 }
 

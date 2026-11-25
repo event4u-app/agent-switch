@@ -335,3 +335,26 @@ describe("ended sessions under the status grouping", () => {
     expect(document.querySelector("[data-done-groups]")!.textContent).not.toContain("Older");
   });
 });
+
+describe("the running count's glyph names what runs", () => {
+  const on = { onSelect: () => {}, onToggleChildren: () => {}, onCheck: () => {} };
+  const arena = (state: "working" | "done") => ({ id: `board:a|arena:${state}`, label: "Arena · x", kind: "arena-board", state, source: "files" as const });
+  const bot = (state: "working" | "done") => ({ id: `bot-${state}`, label: "general-purpose", kind: "subagent", state, source: "files" as const });
+  const glyph = (children: RowSession["children"]) => {
+    const { container } = render(<SessionRow s={s("a", { state: "working", children })} {...on} />);
+    const slot = container.querySelector('button[aria-label^="Show"]');
+    const svg = slot?.querySelector("svg")?.getAttribute("class") ?? "";
+    cleanup();
+    return { svg, text: slot?.textContent ?? "" };
+  };
+
+  it("a running subagent beside a finished arena shows the bot, not the swords", () => {
+    const g = glyph([arena("done"), bot("working")]);
+    expect(g.svg).toMatch(/lucide-bot/);
+    expect(g.text).toBe("1");
+  });
+
+  it("a running arena shows the swords", () => {
+    expect(glyph([arena("working"), bot("done")]).svg).toMatch(/lucide-swords/);
+  });
+});
