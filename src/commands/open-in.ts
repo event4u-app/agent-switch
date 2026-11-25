@@ -156,7 +156,7 @@ export function terminalFacts(provider: string, pid: number | null, platform: No
   const t = detect(pid);
   if (platform !== "darwin") return { running: true, terminal: t?.name ?? null, focusable: false, why: "focusing a terminal works on macOS only" };
   if (!t) return { running: true, terminal: null, focusable: false, why: "the terminal it runs in is not known" };
-  if (!t.app) return { running: true, terminal: t.name, focusable: false, why: `${t.name} cannot be focused from Agent Switch (Terminal.app and iTerm2 can)` };
+  if (!t.app && !t.bundle) return { running: true, terminal: t.name, focusable: false, why: `${t.name} cannot be focused from Agent Switch (Terminal.app and iTerm2 can)` };
   return { running: true, terminal: t.name, focusable: true };
 }
 

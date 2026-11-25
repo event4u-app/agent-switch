@@ -99,7 +99,7 @@ export function RunningOn({
                 {/* Model and thinking are shown here, not changed (owner, 2026-11-24): that happens in the session's own bar. */}
                 <span data-model-readout="" title={[model ?? "Model unknown", thinking && `thinking ${thinking}`].filter(Boolean).join(" · ")} className={cn("inline-flex h-6 items-center gap-1 px-1.5 text-[11px] text-ac-muted", !onMove && "-ml-1.5")}>
                   {model ?? "Model"}
-                  {thinking && <ThinkingArrow level={thinking} />}
+                  {thinking && <ThinkingArrow level={thinking} tool={s.key.split("/")[0]} />}
                 </span>
               </div>
             </div>

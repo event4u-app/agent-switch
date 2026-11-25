@@ -827,17 +827,10 @@ export function SessionsZone({
     const t = s.lastActiveMs ?? lastActiveOf(s.key);
     return t == null || nowMs == null ? null : ago(nowMs - t);
   };
-  // Idle starts folded under the status grouping (owner, 2026-11-24) — unless the open session is idle, or
-  // nothing else is listed (an all-idle list would read as empty). A click on the header decides from then on.
+  // Every group starts open, Idle too (owner, 2026-11-25); a click on a header folds it.
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
-  const [idleChoice, setIdleChoice] = useState<boolean | null>(null);
-  const openRow = sessions.find((s) => s.key === activeKey);
-  const idleDefault = byStatus && !(openRow && statusGroup(openRow) === "Idle") && listed.some((s) => statusGroup(s) !== "Idle");
-  const isFolded = (g: string) => (byStatus && g === "Idle" ? (idleChoice ?? idleDefault) : folded.has(g));
-  const fold = (g: string) => {
-    if (byStatus && g === "Idle") return setIdleChoice(!isFolded(g));
-    setFolded((f) => (f.has(g) ? new Set([...f].filter((x) => x !== g)) : new Set([...f, g])));
-  };
+  const isFolded = (g: string) => folded.has(g);
+  const fold = (g: string) => setFolded((f) => (f.has(g) ? new Set([...f].filter((x) => x !== g)) : new Set([...f, g])));
   return (
     // A column that fills the window, so Done today and Older sit at its foot, right above the limits.
     <section aria-label="Sessions" className="flex flex-1 flex-col">

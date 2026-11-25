@@ -20,11 +20,11 @@ import {
   writeAttention,
   type Candidate,
 } from "../attention.js";
-import { eventFile, readEvents, type HookEventRecord } from "../hooks.js";
+import { eventFile, notificationAsks, readEvents, type HookEventRecord } from "../hooks.js";
 import { configDir, die, identity, listProfiles, ROOT } from "../profiles.js";
 import { readProtection } from "../protection.js";
 import type { ProviderId } from "../providers.js";
-import { listSessions, markLive, openQuestion } from "../sessions.js";
+import { listSessions, openQuestion } from "../sessions.js";
 import { cachedUsage } from "./shared.js";
 import { sessionsWithGit } from "./pr.js";
 import { githubRepo, prCacheFile, prsForHead, readPrCache } from "../pr-facts.js";
@@ -36,15 +36,12 @@ import { requestKind, type SwitchRequest } from "../link/requests.js";
 import { requestStore } from "../link/store.js";
 import { hoursText } from "../link/summary.js";
 
-const HOST_WAIT = /^quota_auto_resume_(armed|fired|cancelled|setting)$/;
-
 /** Everything that could wait for the user right now, unordered. */
 export function gatherCandidates(): Candidate[] {
   const out: Candidate[] = [];
   for (const profile of listProfiles("claude")) {
     const cfg = configDir("claude", profile);
     const rows = listSessions(cfg, 20);
-    markLive(cfg, rows);
     const events = readEvents(eventFile(ROOT, "claude", profile));
     const last = new Map<string, HookEventRecord>();
     // A subagent's start and stop say nothing about whether the session itself waits.
@@ -60,13 +57,9 @@ export function gatherCandidates(): Candidate[] {
       }
       const e = last.get(r.sessionId);
       if (!e || Date.parse(e.at) + 2000 < r.mtimeMs) continue; // answered since: the transcript moved on
-      if (e.event === "Notification" && !(e.notificationType && HOST_WAIT.test(e.notificationType))) {
+      if (e.event === "Notification" && notificationAsks(e.notificationType)) {
         const approval = e.notificationType === "permission_prompt";
         out.push({ kind: approval ? "approval" : "question", subject: key, who, what: approval ? "wants your approval" : "waits for you", since: e.at, version: e.at, verb: "Focus terminal" });
-      } else if (e.event === "Stop" && r.live) {
-        // The turn ended and nothing moved since: the session waits for the next message,
-        // and stays here until it gets one (the transcript moves) or it ends.
-        out.push({ kind: "question", subject: key, who, what: "waits for your next message", since: e.at, version: e.at, verb: "Focus terminal" });
       } else if (e.event === "StopFailure" && (e.error === "authentication_failed" || e.error === "oauth_org_not_allowed")) {
         out.push({ kind: "signin", subject: `claude/${profile}`, who: profile, what: "is signed out", since: e.at, version: e.at });
       } else if (e.event === "StopFailure" && e.error === "rate_limit") {

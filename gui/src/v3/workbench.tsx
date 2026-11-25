@@ -239,27 +239,37 @@ export interface BarSession {
 }
 
 /** The bar's chips that give way when it is narrow, by what stays longest: the last leaves first, where it runs last of all (8.6). */
-/**
- * Thinking as an arrow behind the model (owner, 2026-11-24): down for the least,
- * right for medium, up for the most, the half steps between. One scale for
- * every tool, so the same arrow means the same level everywhere. Pure.
- */
-const THINKING_ARROW: Record<string, { Icon: typeof ArrowUp; step: number }> = {
-  minimal: { Icon: ArrowDown, step: 0 },
-  low: { Icon: ArrowDownRight, step: 1 },
-  medium: { Icon: ArrowRight, step: 2 },
-  high: { Icon: ArrowUpRight, step: 3 },
-  xhigh: { Icon: ArrowUp, step: 4 },
-  max: { Icon: ArrowUp, step: 4 },
+/** Each tool's thinking levels, least first: what the popovers offer and the arrow counts along. */
+export const THINKING_LEVELS: Record<"claude" | "codex" | "antigravity", string[]> = {
+  claude: ["low", "medium", "high", "xhigh", "max"],
+  codex: ["minimal", "low", "medium", "high"],
+  antigravity: [],
 };
-export const thinkingStep = (level: string): number | null => THINKING_ARROW[level.toLowerCase()]?.step ?? null;
-export function ThinkingArrow({ level }: { level: string }) {
-  const a = THINKING_ARROW[level.toLowerCase()];
+
+/**
+ * Thinking as an arrow behind the model: down for the tool's least, up for its
+ * most, its levels spread evenly over the five directions between (owner,
+ * 2026-11-25: Claude's five levels get five arrows). A level the tool does not
+ * list keeps a fixed place on the same scale. Pure.
+ */
+const ARROWS = [ArrowDown, ArrowDownRight, ArrowRight, ArrowUpRight, ArrowUp] as const;
+const FIXED_STEP: Record<string, number> = { minimal: 0, low: 1, medium: 2, high: 3, xhigh: 4, max: 4 };
+export const thinkingStep = (level: string, tool?: string): number | null => {
+  const l = level.toLowerCase();
+  const levels = tool ? THINKING_LEVELS[tool as keyof typeof THINKING_LEVELS] : undefined;
+  const i = levels ? levels.indexOf(l) : -1;
+  if (levels && i >= 0 && levels.length > 1) return Math.round((i * (ARROWS.length - 1)) / (levels.length - 1));
+  return FIXED_STEP[l] ?? null;
+};
+export function ThinkingArrow({ level, tool }: { level: string; /** The session's tool: its own levels set the arrow. */ tool?: string }) {
+  const step = thinkingStep(level, tool);
   const name = level[0].toUpperCase() + level.slice(1);
-  if (!a) return <span className="text-ac-muted">{name}</span>;
+  if (step == null) return <span className="text-ac-muted">{name}</span>;
+  const Icon = ARROWS[step];
+  const top = level.toLowerCase() === "max";
   return (
-    <span data-thinking={level.toLowerCase()} aria-label={`Thinking ${name}`} title={`Thinking ${name}`} className={cn("inline-flex items-center", level.toLowerCase() === "max" ? "text-ac-text" : "text-ac-muted")}>
-      <a.Icon aria-hidden className="size-3.5" strokeWidth={level.toLowerCase() === "max" ? 2.5 : 2} />
+    <span data-thinking={level.toLowerCase()} data-step={step} aria-label={`Thinking ${name}`} title={`Thinking ${name}`} className={cn("inline-flex items-center", top ? "text-ac-text" : "text-ac-muted")}>
+      <Icon aria-hidden className="size-3.5" strokeWidth={top ? 2.5 : 2} />
     </span>
   );
 }
@@ -386,7 +396,7 @@ export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { 
       <BarChip title={s.respawnWhy ?? (s.hosted ? "Model and thinking for the next turn" : "Locked: change it in your terminal (/model)")} locked={!s.hosted || !!s.respawnWhy} open={chipOpen === "model" || chipOpen === "thinking"} chip="model" moved={isMoved("model")} onClick={(e) => on.model(shellX(e))}>
         {/* Unknown: the field's name, muted — never a dash (gap §5b). */}
         {s.model ? <span title={s.modelId ?? undefined}>{s.model}</span> : <span className="text-ac-muted">Model</span>}
-        {s.thinking && <ThinkingArrow level={s.thinking} />}
+        {s.thinking && <ThinkingArrow level={s.thinking} tool={s.tool ?? s.key.split("/")[0]} />}
       </BarChip>
       {s.contextPct != null && (
         <span data-bar-chip="ctx" {...away(isMoved("ctx"))} className="ml-1 shrink-0 whitespace-nowrap font-ac-mono text-[11px] text-ac-muted" title="Context used">

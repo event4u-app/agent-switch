@@ -291,6 +291,22 @@ describe("dispatchV3", () => {
     expect(d.ipc.hostRespawn).toHaveBeenLastCalledWith("claude/work/h", { model: "sonnet" });
   });
 
+  it("a model or thinking change that went through shows at once and says so; a refused one changes nothing shown", async () => {
+    const nextTurn = vi.fn();
+    const d = { ...deps(), nextTurn };
+    await dispatchV3({ type: "set-model", key: "claude/work/h", model: "sonnet" }, d);
+    expect(nextTurn).toHaveBeenCalledWith("claude/work/h", { model: "sonnet" });
+    expect(d.toast).toHaveBeenLastCalledWith({ tone: "info", text: "Sonnet from the next turn" });
+    await dispatchV3({ type: "set-thinking", key: "claude/work/h", level: "max" }, d);
+    expect(nextTurn).toHaveBeenLastCalledWith("claude/work/h", { effort: "max" });
+    expect(d.toast).toHaveBeenLastCalledWith({ tone: "info", text: "Max thinking from the next turn" });
+    nextTurn.mockClear();
+    d.ipc.hostRespawn.mockRejectedValueOnce(new Error("a turn is running in claude/work/h"));
+    await dispatchV3({ type: "set-model", key: "claude/work/h", model: "haiku" }, d);
+    expect(nextTurn).not.toHaveBeenCalled();
+    expect(d.toast).toHaveBeenLastCalledWith({ tone: "alert", text: "Model change failed: a turn is running in claude/work/h" });
+  });
+
   it("blocker: a waiting session focuses its terminal first", async () => {
     const d = deps();
     await dispatchV3({ type: "blocker", key: "claude/work/a" }, d);

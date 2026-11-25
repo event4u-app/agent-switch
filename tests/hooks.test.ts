@@ -299,21 +299,26 @@ test("hookNotice maps the host's own wait at the limit, and keeps the old notice
   assert.match(hookNotice({ event: "Notification", notificationType: "quota_auto_resume_disabled", at }, who)!.message, /auto-continue is off/);
   assert.match(hookNotice({ event: "Notification", notificationType: "quota_auto_resume_cancelled", at }, who)!.message, /cancelled/);
   assert.equal(hookNotice({ event: "Notification", at }, who)!.title, "Claude is waiting");
+  assert.equal(hookNotice({ event: "Notification", notificationType: "idle_prompt", at }, who), null, "the idle reminder repeats the finished turn");
   assert.equal(hookNotice({ event: "Stop", at }, who)!.title, "Claude finished");
   assert.equal(hookNotice({ event: "SessionStart", at }, who), null);
 });
 
-test("waitingSessions: a StopFailure needs you; the host waiting out a limit does not", () => {
+test("waitingSessions: a StopFailure or a prompt needs you; a limit wait or the idle reminder does not", () => {
   const t = Date.parse(at);
   const events = [
     { event: "StopFailure", error: "rate_limit", sessionId: "a", at },
     { event: "Notification", notificationType: "quota_auto_resume_armed", sessionId: "b", at },
     { event: "Notification", notificationType: "quota_auto_resume_disabled", sessionId: "c", at },
+    { event: "Notification", notificationType: "idle_prompt", sessionId: "d", at },
+    { event: "Notification", notificationType: "permission_prompt", sessionId: "e", at },
   ];
   const w = waitingSessions(events, () => t);
   assert.equal(w.get("a"), at);
   assert.equal(w.has("b"), false);
   assert.equal(w.get("c"), at);
+  assert.equal(w.has("d"), false, "the idle reminder after a finished turn asks nothing");
+  assert.equal(w.get("e"), at);
 });
 
 test("resumeFields: keeps the host's resume numbers and flag, nothing else", () => {

@@ -235,6 +235,8 @@ export interface TableSession {
   title: string;
   state: SessionState;
   live: boolean;
+  /** Still running but quiet past the done-after time: the sidebar counts it under Done today or Older, so the tabs do too. */
+  ended?: boolean;
   tool: "claude" | "codex" | "antigravity";
   account: { name: string; color: IdentityColor };
   branch: string | null;
@@ -291,7 +293,7 @@ export function endedWhen(s: TableSession, nowMs?: number): "today" | "older" {
 
 /** A row's status: waiting for you (or its CI is failing), running, idle, or done. Pure. */
 export function tableStatus(s: TableSession): Exclude<TableStatus, "all" | "live"> {
-  if (!s.live) return "done";
+  if (!s.live || s.ended) return "done";
   if (s.state === "needs-you" || s.pr?.ci === "FAILURE" || s.pr?.ci === "ERROR") return "needs";
   return s.state === "working" ? "running" : "idle";
 }

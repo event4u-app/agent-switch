@@ -7,6 +7,7 @@ import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
 import { statusGroup } from "../sessions.js";
 import { chatStart, childrenOf, decisionFor, doneToday, hasOpenPr, initialPlan, nextStep, sessionKey, startCommand, startKey, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
 import { emptyFeeds, type V3Feeds } from "./useFeeds.js";
+import { inStatus } from "../pages.js";
 
 const NOW = Date.parse("2026-11-03T15:00:00");
 
@@ -158,6 +159,25 @@ describe("toV3Data", () => {
     expect(at(later, "quiet")).toBe("active");
   });
 
+  it("All sessions lists under Done today and Older exactly the sessions the sidebar counts there", () => {
+    const H = 3600_000;
+    const rows = [
+      row("busy", { mtimeMs: NOW - 2 * 60_000 }),
+      row("quiet", { mtimeMs: NOW - 20 * 60_000 }),
+      row("stale", { mtimeMs: NOW - 30 * H }),
+      row("ended", { live: false, mtimeMs: NOW - 60_000 }),
+    ];
+    const d = toV3Data(vmWith([account("work")], rows), emptyFeeds(), env());
+    const midnight = new Date(NOW).setHours(0, 0, 0, 0);
+    const sidebar = (tab: "today" | "older") =>
+      d.sessions.filter((s) => (s.doneToday || s.older) && (tab === "today") === (s.lastActiveMs! >= midnight)).map((s) => s.key).sort();
+    const listed = (tab: "today" | "older") => d.table.filter((s) => inStatus(s, tab, NOW)).map((s) => s.key).sort();
+    expect(listed("today")).toEqual(sidebar("today"));
+    expect(listed("older")).toEqual(sidebar("older"));
+    expect(listed("today")).toContain("claude/work/quiet");
+    expect(d.table.filter((s) => inStatus(s, "idle", NOW)).map((s) => s.key)).toEqual(["claude/work/busy"]);
+  });
+
   it("an account's routines reach its Accounts-page row; absent stays absent", () => {
     const d = toV3Data(vmWith([account("a", { routines: { used: 3, limit: 15 } }), account("b")], []), emptyFeeds(), env());
     expect(d.accounts.find((a) => a.name === "a")?.routines).toEqual({ used: 3, limit: 15 });
@@ -170,6 +190,22 @@ describe("toV3Data", () => {
     expect(toV3Data(vm, feeds, env()).bar("claude/work/own")?.view).toBe("chat");
     expect(toV3Data(vm, feeds, env({ ownViews: new Map([["claude/work/own", "terminal"]]) })).bar("claude/work/own")?.view).toBe("terminal");
     expect(toV3Data(vm, feeds, env({ ownViews: new Map([["claude/work/h1", "chat"]]) })).bar("claude/work/h1")?.view).toBe("terminal");
+  });
+
+  it("a model or thinking change shows at once and holds until the transcript reports it", () => {
+    const ctx = (model: string, effort: string) => ({ pct: 10, contextTokens: 1, windowTokens: 2, model, effort, confidence: "exact", source: "transcript" }) as unknown as SessionRow["context"];
+    const feeds: V3Feeds = { ...emptyFeeds(), host: { mode: "persistent", hosted: [{ key: "claude/work/h1", provider: "claude", account: "work", sessionId: "h1", cwd: "/r", startedAt: "", alive: true, parked: false }] } };
+    const nextTurn = new Map([["claude/work/h1", { model: "sonnet", effort: "low" }]]);
+    const before = toV3Data(vmWith([account("work")], [row("h1", { context: ctx("claude-opus-5-5", "high") })]), feeds, env({ nextTurn }));
+    expect(before.bar("claude/work/h1")).toMatchObject({ model: "Sonnet", thinking: "low" });
+    expect(before.models?.("claude/work/h1")).toMatchObject({ current: "sonnet", currentThinking: "low" });
+    expect(before.table.find((t) => t.key === "claude/work/h1")).toMatchObject({ model: "Sonnet", thinking: "low" });
+    // Only the thinking changed: the model stays what the transcript says.
+    const effortOnly = toV3Data(vmWith([account("work")], [row("h1", { context: ctx("claude-opus-5-5", "high") })]), feeds, env({ nextTurn: new Map([["claude/work/h1", { effort: "max" }]]) }));
+    expect(effortOnly.bar("claude/work/h1")).toMatchObject({ model: "Opus 5.5", thinking: "max" });
+    // The next turn ran on it: the transcript speaks again.
+    const after = toV3Data(vmWith([account("work")], [row("h1", { context: ctx("claude-sonnet-5-5", "low") })]), feeds, env());
+    expect(after.bar("claude/work/h1")).toMatchObject({ model: "Sonnet 5.5", thinking: "low" });
   });
 
   it("the bar knows where a session runs: a hosted window can be attached; elsewhere it names the app watched", () => {

@@ -98,6 +98,8 @@ export interface DispatchDeps {
   rememberStart?: (plan: NewSessionPlan) => void;
   /** Open the take-over dialog for a session in the user's own terminal. */
   takeOver?: (key: string) => void;
+  /** A hosted session was restarted on this model or thinking: show it until its next turn reports it. */
+  nextTurn?: (key: string, change: { model?: string; effort?: string }) => void;
 }
 /** Claude's `--model` aliases. */
 const vmSessionId = (key: string) => {
@@ -131,6 +133,20 @@ async function run(deps: DispatchDeps, what: string, p: Promise<unknown>): Promi
   } catch (e) {
     deps.toast({ tone: "alert", text: `${what} failed: ${e instanceof Error ? e.message : String(e)}` });
   }
+}
+const cap = (w: string) => w[0].toUpperCase() + w.slice(1);
+/** Restart a hosted Claude session on another model or thinking. The transcript reports it only after
+ *  the next turn, so the change is shown at once and confirmed; a refused one changes nothing shown. */
+async function respawnFor(deps: DispatchDeps, key: string, what: string, change: { model?: string; effort?: string }, done: string): Promise<void> {
+  try {
+    await deps.ipc.hostRespawn(key, change);
+  } catch (e) {
+    deps.toast({ tone: "alert", text: `${what} failed: ${e instanceof Error ? e.message : String(e)}` });
+    return;
+  }
+  deps.nextTurn?.(key, change);
+  deps.toast({ tone: "info", text: done });
+  deps.refresh();
 }
 /** Types `text` into the session where the app can: its chat in this window, or
  *  the window it hosts. False where it cannot, so the caller says where to go. */
@@ -434,14 +450,14 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       if (chat) return chat.setModel(a.model);
       if (!deps.hosted(a.key)) return;
       if (!a.key.startsWith("claude/")) return deps.toast({ tone: "info", text: CODEX_RESPAWN_WHY });
-      return run(deps, "Model change", deps.ipc.hostRespawn(a.key, { model: a.model }));
+      return respawnFor(deps, a.key, "Model change", { model: a.model }, `${cap(a.model)} from the next turn`);
     }
     case "set-thinking": {
       if (deps.chatOf?.(a.key)) return deps.toast({ tone: "info", text: "Thinking is set when the chat starts; switch to the terminal view to change it" });
       if (!deps.hosted(a.key)) return;
       // `host respawn` restarts Claude only; it refuses anything else.
       if (!a.key.startsWith("claude/")) return deps.toast({ tone: "info", text: CODEX_RESPAWN_WHY });
-      return run(deps, "Thinking change", deps.ipc.hostRespawn(a.key, { effort: a.level }));
+      return respawnFor(deps, a.key, "Thinking change", { effort: a.level }, `${cap(a.level)} thinking from the next turn`);
     }
     case "blocker":
       return blocker(a.key, deps);
