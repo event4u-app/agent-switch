@@ -764,7 +764,10 @@ export function SessionsZone({
   card,
   onRowMenu,
   currentChild,
+  under,
 }: {
+  /** Inside a tile, under its session row: what the session asks of you (Needs you › Sessions). */
+  under?: (key: string) => ReactNode;
   /** A subagent open in the workbench: its row is selected under its (active) session. */
   currentChild?: string | null;
   /** Right-click on a row: its menu at the pointer (owner, 2026-11-25: open in a new tab, …). */
@@ -953,6 +956,7 @@ export function SessionsZone({
           return card ? (
             <div key={s.key} data-session-card="" className="mb-1.5 rounded-md border border-ac-line bg-ac-bg/40 p-0.5">
               {row}
+              {under?.(s.key)}
             </div>
           ) : (
             row

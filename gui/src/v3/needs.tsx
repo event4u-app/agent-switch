@@ -61,7 +61,7 @@ export const answeredThere = (n: NeedItem) => n.verb === "Focus terminal" || n.v
 
 const warn = (n: NeedItem) => n.kind === "approval" || n.kind === "question" || n.kind === "limit" || n.kind === "ci";
 
-export function NeedRow({ n, top, focused, always = true, onVerb }: { n: NeedItem; top?: boolean; focused?: boolean; always?: boolean; onVerb: (n: NeedItem) => void }) {
+export function NeedRow({ n, top, focused, always = true, onVerb, bare }: { n: NeedItem; top?: boolean; focused?: boolean; always?: boolean; onVerb: (n: NeedItem) => void; /** Inside its session's tile: the tile names the session, so the row says only what it asks. */ bare?: boolean }) {
   const open = top || focused;
   return (
     // A focused item holds DOM focus (tabIndex -1), so its keys never reach a focused terminal.
@@ -70,7 +70,7 @@ export function NeedRow({ n, top, focused, always = true, onVerb }: { n: NeedIte
       <div className="flex h-6 items-center gap-2">
         <span className={cn("shrink-0 [&_svg]:size-3.5", warn(n) ? "text-ac-warn-text" : "text-ac-muted")}>{ICON[n.kind]}</span>
         <span className="min-w-0 flex-1 truncate text-[12.5px]">
-          <span className="text-ac-text">{n.who}</span> <span className="text-ac-muted">{n.what}</span>
+          {bare && n.kind !== "ci" ? <span className="text-ac-soft">{n.what}</span> : <><span className="text-ac-text">{n.who}</span> <span className="text-ac-muted">{n.what}</span></>}
         </span>
         {/* One frame, the row's own height (owner, 2026-11-25): no focus ring around the outlined button, which
             read as a double frame and, at 28 px in a 24 px line, sat too high. The focused row says itself

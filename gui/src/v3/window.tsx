@@ -40,7 +40,7 @@ import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, ty
 import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding } from "./keys.js";
 import { EMPTY_TABS, canReopen, closable, closeOthers, closeTab, closeToRight, closeUnpinned, isPageTab, moveTab, nextActive, openAnother, openInDefault, openTab, pinTab, reopenTab, seedTabs, sessionOf, unpinTab, type TabState } from "./tabs.js";
-import { needSession, nextFocus, shownNeeds } from "./needs.js";
+import { NeedRow, needSession, nextFocus, shownNeeds } from "./needs.js";
 import { canCopy, copyConversation } from "./copy-source.js";
 import { Switcher } from "./overlays.js";
 import { DEFAULT_GROUP, GROUP_LABEL, SORT_LABEL, liveOrder, type GroupBy, type SortBy } from "./sessions.js";
@@ -463,7 +463,7 @@ export function V3Window({
 
   // Tool updates join the queue (spec §10.4); limit items open the decision sheet.
   const needs = useMemo(() => allNeeds({ needs: data.needs, tools: data.tools, nowMs: data.nowMs }), [data.needs, data.tools, data.nowMs]);
-  const needsKind = needsKindPick ?? (needs.some((n) => !!needSession(n)) ? "sessions" : "system");
+  const needsKind = needsKindPick ?? (needs.some((n) => !!needSession(n)) || data.sessions.some((x) => statusGroup(x) === "Needs you") ? "sessions" : "system");
   // The tray's Start session opens the same New-session dialog as ⌘N, once per request.
   const newSessionDone = useRef<number | null>(null);
   useEffect(() => {
@@ -889,6 +889,11 @@ export function V3Window({
   // No filter of its own: the search in the title bar finds sessions (owner, 2026-11-25).
   const found = liveSessions;
   const foundNeeds = needs;
+  // What waits on you from a session: its own needs-you state, or an item (approval, question, CI) about it.
+  const waitingKeys = new Set([...liveSessions.filter((x) => statusGroup(x) === "Needs you").map((x) => x.key), ...needs.map(needSession).filter((k): k is string => !!k)]);
+  const waiting = found.filter((x) => waitingKeys.has(x.key));
+  // An item about a session this list does not hold (ended, filtered, another machine) still shows, as its own row.
+  const orphanNeeds = foundNeeds.filter((n) => { const k = needSession(n); return !!k && !waiting.some((x) => x.key === k); });
   const sessionsWindow = (
     <aside aria-label="Sessions window" data-loaded={data.loading ? "false" : "true"} aria-busy={data.loading || undefined} className="flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-ac-line bg-ac-panel">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-ac-line px-3">
@@ -914,33 +919,34 @@ export function V3Window({
           onChange={setPaneTab}
           options={[
             { value: "you", label: <>Needs you <PaneCount n={needs.length} tone={needs.length ? "warn" : undefined} /></> },
-            { value: "running", label: <>Running <PaneCount n={liveSessions.filter((x) => statusGroup(x) === "Running").length} /></> },
-            { value: "other", label: <>Other <PaneCount n={liveSessions.filter((x) => statusGroup(x) === "Idle").length} /></> },
+            { value: "running", label: <>Running <PaneCount n={liveSessions.filter((x) => !waitingKeys.has(x.key) && statusGroup(x) === "Running").length} /></> },
+            { value: "other", label: <>Other <PaneCount n={liveSessions.filter((x) => !waitingKeys.has(x.key) && statusGroup(x) === "Idle").length} /></> },
           ]}
         />
       </div>
       <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {paneTab === "you" ? (
-          <>
-            <div className="px-2.5 pt-2" data-needs-kind="">
-              <Segmented
-                label="Asked by"
-                size="sm"
-                fill
-                value={needsKind}
-                onChange={setNeedsKind}
-                options={[
-                  { value: "sessions", label: <>Sessions <PaneCount n={foundNeeds.filter((n) => !!needSession(n)).length} /></> },
-                  { value: "system", label: <>System <PaneCount n={foundNeeds.filter((n) => !needSession(n)).length} /></> },
-                ]}
-              />
-            </div>
-            <NeedsZone full items={foundNeeds.filter((n) => !!needSession(n) === (needsKind === "sessions"))} away={needsKind === "system" ? data.away : null} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
-          </>
+        {paneTab === "you" && (
+          <div className="px-2.5 pt-2" data-needs-kind="">
+            <Segmented
+              label="Asked by"
+              size="sm"
+              fill
+              value={needsKind}
+              onChange={setNeedsKind}
+              options={[
+                { value: "sessions", label: <>Sessions <PaneCount n={waiting.length + orphanNeeds.length} /></> },
+                { value: "system", label: <>System <PaneCount n={foundNeeds.filter((n) => !needSession(n)).length} /></> },
+              ]}
+            />
+          </div>
+        )}
+        {paneTab === "you" && needsKind === "system" ? (
+          <NeedsZone full items={foundNeeds.filter((n) => !needSession(n))} away={data.away} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
         ) : (
         <SessionsZone
-          // Running, or Other: inactive, older ones. A session waiting on you is under Needs you (owner, 2026-11-25).
-          sessions={found.filter((x) => statusGroup(x) === (paneTab === "running" ? "Running" : "Idle"))}
+          // Needs you › Sessions: the waiting sessions as normal tiles; Running; Other: inactive, older ones.
+          // Each session sits in one place only (owner, 2026-11-25).
+          sessions={paneTab === "you" ? waiting : found.filter((x) => !waitingKeys.has(x.key) && statusGroup(x) === (paneTab === "running" ? "Running" : "Idle"))}
           activeKey={activeSession}
           sort="activity"
           // No groups, nothing to fold, no sort menu: newest activity on top, always (owner, 2026-11-25).
@@ -971,12 +977,16 @@ export function V3Window({
           onSelect={openSession}
           onRowMenu={(key, at) => setOverlay({ rowMenu: key, ...shellPoint(at) })}
           currentChild={subView && subView.parent === activeSession ? subView.agentId : null}
+          under={paneTab === "you" ? (key) => needs.filter((n) => needSession(n) === key).map((n) => <NeedRow key={n.id} bare n={n} focused={n.id === focusedNeed} always={!!data.chatHere?.(n.subject)} onVerb={onVerb} />) : undefined}
           // One session unfolded at a time (owner, 2026-11-24): opening one folds the other.
           onToggleChildren={(k) => setOpenKids((c) => (c.has(k) ? new Set() : new Set([k])))}
           onCheck={(k) => setSelection((c) => { const n = new Set(c ?? []); n.has(k) ? n.delete(k) : n.add(k); return n; })}
           onDoneToday={(which) => (setTableTab((t) => ({ status: which ?? "all", n: t.n + 1 })), openPage("sessions-table"))}
           batch={batch([...(selection ?? [])])}
         />
+        )}
+        {paneTab === "you" && needsKind === "sessions" && orphanNeeds.length > 0 && (
+          <NeedsZone full items={orphanNeeds} away={null} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
         )}
       </div>
       <LimitsStrip accounts={data.limits} nowMs={data.nowMs} openKey={limitsOpen} currentKey={bar && activeSession ? (data.limits.find((l) => l.tool === activeSession.split("/")[0] && l.name === bar.account.name)?.key ?? null) : null} onOpen={(key) => setOverlay((o) => (o && typeof o === "object" && "limits" in o && o.limits === key ? null : { limits: key }))} onSignIn={(key) => act({ type: "account", op: "sign-in", key })} />
