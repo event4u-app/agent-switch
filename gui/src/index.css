@@ -344,7 +344,25 @@ body {
 .as-ac [data-stale] *::after {
   animation: none !important;
 }
+/* A count that waits on you (owner, 2026-11-25): a short beat every few seconds, the arena's live-bar
+   pulse slowed down — rest most of the loop, then dim and shrink once and come back. */
+.as-ac .ac-nudge {
+  animation: ac-nudge 3.2s ease-in-out infinite;
+}
+@keyframes ac-nudge {
+  0%,
+  70%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  82% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
+  .as-ac .ac-nudge,
   .as-ac .ac-pulse,
   .ac-sheet[data-state="open"],
   .ac-scrim[data-state="open"],

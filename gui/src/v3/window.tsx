@@ -1164,5 +1164,5 @@ export function V3Window({
 
 /** A tab's or button's count, the pill the stripe and groups use. */
 function PaneCount({ n, tone }: { n: number; tone?: "warn" }) {
-  return <span className={cn("ml-1 inline-flex h-4 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-normal tabular-nums leading-none", tone === "warn" ? "bg-ac-warn-tint text-ac-warn-text" : "bg-ac-line text-ac-soft")}>{n}</span>;
+  return <span className={cn("ml-1 inline-flex h-4 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-normal tabular-nums leading-none", tone === "warn" ? "ac-nudge bg-ac-warn-tint text-ac-warn-text" : "bg-ac-line text-ac-soft")}>{n}</span>;
 }
