@@ -1,0 +1,5 @@
+# `tauri dev` starts the app through `cargo run`, so this runner sees every dev launch.
+# On macOS it gives the dev build the same local signature as the downloaded app, so a
+# folder grant survives rebuilds (see src/mac-signing.ts). `tauri build` never uses it.
+[target.'cfg(target_os = "macos")']
+runner = "scripts/dev-runner.sh"
