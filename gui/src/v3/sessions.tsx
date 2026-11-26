@@ -831,7 +831,6 @@ export function SessionsZone({
   const order = useHeldOrder(sorted.map((s) => s.key), engaged || !!holdOrder);
   const byKey = new Map(sorted.map((s) => [s.key, s]));
   const live = order.map((k) => byKey.get(k)!);
-  const done = sessions.filter((s) => s.doneToday).length;
   const doneRows = endedRows(sessions, nowMs, lastActiveOf).filter((g) => g.count > 0);
   const byStatus = group === "status";
   const grouped = byStatus || (group !== "none" && !!groupOf);
@@ -970,13 +969,7 @@ export function SessionsZone({
           ];
           }),
         ])}
-        {!byStatus && done > 0 && (
-          <div className="mt-0.5 flex h-7 items-center gap-2 px-2.5 text-[11.5px] text-ac-muted">
-            <button type="button" onClick={() => onDoneToday("today")} className="inline-flex flex-1 items-center gap-2 text-left hover:text-ac-text">
-              <ChevronRight className="size-3" /> Done today {done}
-            </button>
-          </div>
-        )}
+        {/* No "Done today" link under the list (owner, 2026-11-26): Done today and Older live on the left stripe. */}
       </div>
       {pinned && byStatus && doneRows.length > 0 && (
         <div data-done-groups="" className="sticky bottom-0 z-[1] mt-auto border-t border-ac-line bg-ac-panel px-1.5 py-1">

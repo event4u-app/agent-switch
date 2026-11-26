@@ -76,11 +76,9 @@ describe("Sessions zone (spec §5.2)", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("'Done today' is one row that opens All sessions; Clean up lives there (owner, 2026-11-24)", () => {
-    const onDoneToday = vi.fn();
-    render(zone([s("a"), s("d1", { state: "done", doneToday: true }), s("d2", { state: "done", doneToday: true })], { onDoneToday }));
-    fireEvent.click(screen.getByText(/Done today 2/));
-    expect(onDoneToday).toHaveBeenCalledOnce();
+  it("no 'Done today' link under the list — it lives on the left stripe (owner, 2026-11-26)", () => {
+    render(zone([s("a"), s("d1", { state: "done", doneToday: true }), s("d2", { state: "done", doneToday: true })]));
+    expect(screen.queryByText(/Done today/)).toBeNull();
     expect(screen.queryByText("Clean up")).toBeNull();
   });
 });
