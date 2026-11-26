@@ -303,7 +303,7 @@ export function makeData(o: { theme: string; accent: Accent; health?: string; aw
         },
   bar: (key) => {
     const b = BAR[key];
-    return b ? { key, hosted: b.hosted, chatAvailable: b.hosted, view: o.chat?.(key) && b.hosted ? "chat" : "terminal", account: { name: b.acct, color: b.color, fiveH: b.five, protect: b.protect }, model: b.model, thinking: b.thinking, contextPct: b.ctx } : null;
+    return b ? { key, hosted: b.hosted, chatAvailable: b.hosted, view: o.chat?.(key) && b.hosted ? "chat" : "terminal", account: { name: b.acct, color: b.color, fiveH: b.five, protect: b.protect }, model: b.model, thinking: b.thinking, contextPct: b.ctx, place: placeOf(key) } : null;
   },
   summary: (key) =>
     !key.endsWith("s-checkout") && !key.endsWith("s-store")
@@ -313,6 +313,31 @@ export function makeData(o: { theme: string; accent: Accent; health?: string; aw
       : { next: { text: "#142 needs a review; you'll hear when CI is done.", action: "Request review" }, pr: { number: 142, url: "#", ci: "PENDING", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "REVIEW_REQUIRED", failingChecks: [] }, git: { branch: "feat/event-store", worktree: true, changed: changesOf("claude/work/s-store").length, ahead: 3, behind: 0 }, limit: null, more: { id: "claude:work/9f2c…e41a", host: "tmux · as-work-3", library: "pinned · in vault", children: "3 subagents" } },
   changes: (key) => changesOf(key),
   next: (key) => (key.endsWith("s-checkout") ? { text: "CI fails on e2e and the branch conflicts with main. One prompt: rebase, then fix e2e (log attached).", action: "Send to agent" } : null),
+  };
+}
+
+/** Where each session works: the status bar under the chat — the same folders its recorded terminal shows. */
+const CWD_OF: Record<string, string> = {
+  "s-store": "agent-switch.worktrees/event-store",
+  "s-themes": "agent-switch.worktrees/themes",
+  "s-wedge": "agent-switch.worktrees/wedge",
+  "s-council": "agent-config",
+  "s-checkout": "event4u-web",
+};
+function placeOf(key: string) {
+  const s = SESSIONS.find((x) => x.key === key);
+  const id = key.split("/").pop()!;
+  const dir = CWD_OF[id] ?? "agent-switch";
+  const project = dir.split(".worktrees")[0];
+  return {
+    cwd: `/Users/matze/code/${dir}`,
+    project,
+    projectRoot: `/Users/matze/code/${project}`,
+    branch: s?.branch ?? null,
+    worktree: dir.includes(".worktrees/"),
+    changed: changesOf(key).length,
+    ahead: id === "s-checkout" ? 5 : id === "s-store" ? 3 : 0,
+    behind: id === "s-checkout" ? 9 : 0,
   };
 }
 

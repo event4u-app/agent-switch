@@ -34,7 +34,7 @@ import { SubagentView } from "./subagent-view.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
 import { allNeeds } from "./tools.js";
-import { AFTER_TURN_DOWN_WHY, BlockerStrip, HintStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, HOSTED_HINT, type BarChipId, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
+import { AFTER_TURN_DOWN_WHY, BlockerStrip, HintStrip, ModelPopover, SessionBar, StatusBar, SystemBanner, TabStrip, engineDownText, HOSTED_HINT, type BarChipId, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
 import { AccountMark, Act, inShell, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
@@ -846,6 +846,7 @@ export function V3Window({
           ) : (
             bodyOf(activeSession)
           )}
+          {bar?.place && <StatusBar place={bar.place} />}
         </>
       ) : data.sessions.length === 0 && data.loading ? (
         // First read still running: an empty list is not "no sessions" yet.
