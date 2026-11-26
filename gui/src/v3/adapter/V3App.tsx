@@ -30,7 +30,7 @@ import { localLayout } from "../layout.js";
 import { KEYS_STORAGE, withRebinds } from "../keys.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
-import { canTakeOver, chatStart, hasOpenPr, initialPlan, nextTurnReached, NO_TERMINAL_WHY, sessionKey, startKey, toV3Data, worktreeOf, type AdapterEnv, type NextTurn, type SessionTerminal } from "./data.js";
+import { chatStart, hasOpenPr, initialPlan, nextTurnReached, NO_TERMINAL_WHY, sessionKey, startKey, toV3Data, worktreeOf, type AdapterEnv, type NextTurn, type SessionTerminal } from "./data.js";
 import { SessionBody, SubagentTranscript, ToolsSlot, settingsSection } from "./slots.js";
 import { BoardPage } from "../board/BoardPage.js";
 import type { SessionRow } from "../../transforms.js";
