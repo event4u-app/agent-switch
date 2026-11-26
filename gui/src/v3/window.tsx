@@ -40,7 +40,7 @@ import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, ty
 import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding } from "./keys.js";
 import { EMPTY_TABS, canReopen, canShift, closable, closeOthers, closeTab, closeToLeft, closeToRight, closeUnpinned, shiftTab, isPageTab, mainTab, moveTab, nextActive, openAnother, openInDefault, openTab, pinTab, reopenTab, seedTabs, sessionOf, unpinTab, type TabState } from "./tabs.js";
-import { NeedRow, needSession, nextFocus, shownNeeds } from "./needs.js";
+import { NeedRow, needSession, nextFocus } from "./needs.js";
 import { canCopy, copyConversation } from "./copy-source.js";
 import { Switcher } from "./overlays.js";
 import { DEFAULT_GROUP, GROUP_LABEL, SORT_LABEL, liveOrder, type GroupBy, type SortBy } from "./sessions.js";
@@ -251,7 +251,6 @@ export function V3Window({
   const saved = useMemo(() => layout?.load() ?? null, [layout]);
   // Tab order, pins and the recently closed tabs (tabs.ts); page tabs are `page:<id>`.
   const [strip, setStrip] = useState<TabState>(EMPTY_TABS);
-  const pages = strip.order.filter(isPageTab).map((id) => id.slice(5) as Page);
   const sessionTabs = strip.order.filter((id) => !isPageTab(id));
   const [active, setActive] = useState<string | null>(null);
   const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "history" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string; at?: Anchor; moved?: BarChipId[] } | { end: string } | { openin: string; at?: Anchor } | { tabMenu: string; x: number; y: number } | { rowMenu: string; x: number; y: number } | { pageMenu: string; x: number; y: number }>(null);
@@ -917,6 +916,9 @@ export function V3Window({
   const waiting = found.filter((x) => waitingKeys.has(x.key));
   // An item about a session this list does not hold (ended, filtered, another machine) still shows, as its own row.
   const orphanNeeds = foundNeeds.filter((n) => { const k = needSession(n); return !!k && !waiting.some((x) => x.key === k); });
+  // One unit for all three counts, so Needs you reads Sessions + System: each item once, and a waiting session with no item of its own once.
+  const systemAsks = foundNeeds.filter((n) => !needSession(n)).length;
+  const sessionAsks = foundNeeds.length - systemAsks + waiting.filter((x) => !foundNeeds.some((n) => needSession(n) === x.key)).length;
   const sessionsWindow = (
     <aside aria-label="Sessions window" data-loaded={data.loading ? "false" : "true"} aria-busy={data.loading || undefined} className="flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-ac-line bg-ac-panel">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-ac-line px-3">
@@ -941,7 +943,7 @@ export function V3Window({
           value={paneTab}
           onChange={setPaneTab}
           options={[
-            { value: "you", label: <>Needs you <PaneCount n={needs.length} tone={needs.length ? "warn" : undefined} /></> },
+            { value: "you", label: <>Needs you <PaneCount n={sessionAsks + systemAsks} tone={sessionAsks + systemAsks ? "warn" : undefined} /></> },
             { value: "running", label: <>Running <PaneCount n={liveSessions.filter((x) => !waitingKeys.has(x.key) && statusGroup(x) === "Running").length} /></> },
             { value: "other", label: <>Other <PaneCount n={liveSessions.filter((x) => !waitingKeys.has(x.key) && statusGroup(x) === "Idle").length} /></> },
           ]}
@@ -957,8 +959,8 @@ export function V3Window({
               value={needsKind}
               onChange={setNeedsKind}
               options={[
-                { value: "sessions", label: <>Sessions <PaneCount n={waiting.length + orphanNeeds.length} /></> },
-                { value: "system", label: <>System <PaneCount n={foundNeeds.filter((n) => !needSession(n)).length} /></> },
+                { value: "sessions", label: <>Sessions <PaneCount n={sessionAsks} /></> },
+                { value: "system", label: <>System <PaneCount n={systemAsks} /></> },
               ]}
             />
           </div>

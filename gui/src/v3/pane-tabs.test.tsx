@@ -136,4 +136,29 @@ describe("Needs you: Sessions | System (owner, 2026-11-25)", () => {
     expect(win.getByText("94% of 5h")).toBeTruthy();
     expect(win.queryByText("asks you")).toBeNull();
   });
+
+  it("Needs you counts what waits, in one unit: its number is Sessions plus System", () => {
+    const at = new Date(data().nowMs ?? Date.now()).toISOString();
+    const item = (id: string, kind: "approval" | "ci" | "limit", subject: string) => ({ id, kind, subject, who: subject, what: id, verb: "Go", since: at, version: "1" });
+    const base = data().sessions[0];
+    render(
+      <V3Window
+        data={{
+          ...data(),
+          // s1 asks twice (an approval and its CI); s2 waits on you with no item of its own; one limit is the app's.
+          needs: [item("allow", "approval", "s1"), item("ci", "ci", "s1"), item("limit", "limit", "claude/work")],
+          sessions: [base, { ...base, key: "s2", title: "Checkout flow", state: "waiting" as const, needsYou: true }],
+        }}
+        slots={slots}
+        act={vi.fn()}
+      />,
+    );
+    const win = within(screen.getByLabelText("Sessions window"));
+    paneTab("Needs you");
+    const n = (name: RegExp) => Number(win.getByRole("radio", { name }).textContent!.match(/\d+/)![0]);
+    expect(n(/^Sessions/)).toBe(3);
+    // The limit, plus any tool update the fixture's tools carry.
+    expect(n(/^System/)).toBeGreaterThanOrEqual(1);
+    expect(n(/^Needs you/)).toBe(n(/^Sessions/) + n(/^System/));
+  });
 });
