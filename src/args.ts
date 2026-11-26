@@ -19,6 +19,9 @@ const VALUE_FLAGS = new Set([
   // `workflows --council RUN --say TEXT`: the live council table's run and the remark.
   "council",
   "say",
+  // `workflows --arena RUN --name TEXT|--decision TEXT`: name an arena run or its decision (the GUI, as the user).
+  "arena",
+  "decision",
   "provider",
   "exclude",
   "prompt",

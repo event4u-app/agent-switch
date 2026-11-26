@@ -349,6 +349,21 @@ export async function councilSay(key: string, run: string, msg: import("./v3/boa
   await runCli(["workflows", key, "--council", run, ...flag, "--json"]);
 }
 
+/** `deliberation get [--session KEY] --json`: whether the agent offers a council, arena or panel — for one session, or globally. */
+export async function deliberationGet(key?: string): Promise<import("./v3/deliberation.js").DeliberationState> {
+  return JSON.parse(await runCli(["deliberation", "get", ...(key ? ["--session", key] : []), "--json"]));
+}
+
+/** `deliberation set MODE [--session KEY] --json`: set it globally, or for one session (`inherit` goes back to the global one). */
+export async function deliberationSet(mode: import("./v3/deliberation.js").DeliberationMode | "inherit", key?: string): Promise<import("./v3/deliberation.js").DeliberationState> {
+  return JSON.parse(await runCli(["deliberation", "set", mode, ...(key ? ["--session", key] : []), "--json"]));
+}
+
+/** `workflows <session> --arena RUN --name TEXT|--decision TEXT`: the user names an arena run or its decision; empty clears it. */
+export async function arenaRename(key: string, run: string, field: "name" | "decision", text: string): Promise<void> {
+  await runCli(["workflows", key, "--arena", run, `--${field}`, text, "--json"]);
+}
+
 /** `workflows <session> --line RUN/LINE --json`: one bracket line's full output (its rationale and diff). */
 export async function bracketLineOutput(key: string, run: string, line: string): Promise<string> {
   const o = JSON.parse(await runCli(["workflows", key, "--line", `${run}/${line}`, "--json"]));

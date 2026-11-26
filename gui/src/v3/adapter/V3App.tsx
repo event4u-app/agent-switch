@@ -32,6 +32,7 @@ import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
 import { chatStart, hasOpenPr, initialPlan, nextTurnReached, NO_TERMINAL_WHY, sessionKey, startKey, toV3Data, worktreeOf, type AdapterEnv, type NextTurn, type SessionTerminal } from "./data.js";
 import { SessionBody, SubagentTranscript, ToolsSlot, settingsSection } from "./slots.js";
+import { DeliberationChipSlot, DeliberationGlobalSlot } from "./deliberation.js";
 import { BoardPage } from "../board/BoardPage.js";
 import type { SessionRow } from "../../transforms.js";
 import { engineSuspect, useV3Feeds } from "./useFeeds.js";
@@ -483,8 +484,9 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       </>
       );
     },
+    deliberation: { global: () => <DeliberationGlobalSlot />, chip: (key) => <DeliberationChipSlot key={key} sessionKey={key} /> },
     subagent: (parent, agentId) => <SubagentTranscript key={`${parent}#${agentId}`} parent={parent} agentId={agentId} />,
-    board: (key, focus) => {
+    board: (key, focus, onSession) => {
       const row = byKey.get(key);
       return (
         <BoardPage
@@ -496,6 +498,8 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
           read={ipc.sessionBoard}
           readLine={ipc.bracketLineOutput}
           speak={ipc.councilSay}
+          onSession={onSession}
+          rename={ipc.arenaRename}
           transcript={(agentId) => <SubagentTranscript key={`${key}#${agentId}`} parent={key} agentId={agentId} />}
         />
       );

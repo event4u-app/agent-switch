@@ -298,7 +298,7 @@ export const tildePath = (p: string, home?: string | null): string => {
  * project, which folder the agent runs in, which branch — one line, always in
  * the same place. The path copies on click.
  */
-export function StatusBar({ place, home }: { place: SessionPlace; /** The home folder, shown as ~; absent: read from the path. */ home?: string | null }) {
+export function StatusBar({ place, home, extra }: { place: SessionPlace; /** The home folder, shown as ~; absent: read from the path. */ home?: string | null; /** Controls at its right end, such as the chat's council / arena / panel mode. */ extra?: ReactNode }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -342,11 +342,14 @@ export function StatusBar({ place, home }: { place: SessionPlace; /** The home f
           {!!place.behind && <span title={`${place.behind} behind upstream`}>↓{place.behind}</span>}
         </span>
       )}
-      {place.changed != null && place.changed > 0 && (
-        <span className="ml-auto shrink-0" title={`${place.changed} changed file${place.changed === 1 ? "" : "s"}`}>
-          {place.changed} changed
-        </span>
-      )}
+      <span className="ml-auto flex shrink-0 items-center gap-2.5">
+        {place.changed != null && place.changed > 0 && (
+          <span className="shrink-0" title={`${place.changed} changed file${place.changed === 1 ? "" : "s"}`}>
+            {place.changed} changed
+          </span>
+        )}
+        {extra}
+      </span>
     </footer>
   );
 }

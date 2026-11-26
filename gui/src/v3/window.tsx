@@ -108,7 +108,10 @@ export interface V3Slots {
   /** v3.1: the Review page of one session (spec §10.9), opened at `focus` when a file was picked. Absent: Review and Commit stay disabled. */
   review?: (key: string, focus?: ReviewFocus) => ReactNode;
   /** The board of one session: its arenas, councils and workflow runs, opened at `focus` ("arena:<run>", "council", "workflow:<runId>"). Absent: those rows do not open. */
-  board?: (key: string, focus?: string) => ReactNode;
+  /** Council, arena, panel: the global setting (Settings › Agents) and one chat's control (its status bar). */
+  deliberation?: { global: () => ReactNode; chip: (key: string) => ReactNode };
+  /** `onSession`: back to the session the board belongs to (its chat or terminal). */
+  board?: (key: string, focus?: string, onSession?: () => void) => ReactNode;
   /** The 2.11 settings screens v3 keeps, by section. */
   settings: (section: SettingsSection) => ReactNode;
 }
@@ -611,7 +614,7 @@ export function V3Window({
 
   const page = (p: Page): ReactNode => {
     if (p.startsWith("review:")) return slots.review ? slots.review(p.slice(7), reviewFocus.get(p.slice(7))) : null;
-    if (p.startsWith("board:")) return slots.board ? slots.board(p.slice(6), boardFocus.get(p.slice(6))) : null;
+    if (p.startsWith("board:")) return slots.board ? slots.board(p.slice(6), boardFocus.get(p.slice(6)), () => openSession(p.slice(6))) : null;
     if (p === "accounts")
       return (
         <AccountsPage
@@ -648,7 +651,10 @@ export function V3Window({
         ) : section === "Open in" ? (
           <OpenInSettings {...data.openIn} on={{ setDefault: (target, repo) => act({ type: "open-default", target, repo }), setTerminal: (id) => act({ type: "open-terminal", id }), focusTerminal: (value) => act({ type: "focus-terminal-setting", value }), terminalSync: (value) => act({ type: "terminal-sync", value }) }} />
         ) : section === "Agents" ? (
-          <AgentsSettings agents={data.agents.rows} suggestions={data.agents.suggestions} on={{ toggle: (id, value) => act({ type: "agent-enabled", id, value }), install: (id) => act({ type: "agent-install", id }) }} />
+          <>
+            <AgentsSettings agents={data.agents.rows} suggestions={data.agents.suggestions} on={{ toggle: (id, value) => act({ type: "agent-enabled", id, value }), install: (id) => act({ type: "agent-install", id }) }} />
+            {slots.deliberation?.global()}
+          </>
         ) : section === "Remote" ? (
           <RemoteSettings claudeAccounts={data.accounts.filter((a) => a.tool === "claude").map((a) => a.name)} remoteControl={data.remote.remoteControl} ssh={data.remote.ssh} on={{ rc: (account, value) => act({ type: "remote-rc", account, value }), ssh: (value) => act({ type: "remote-ssh", value }) }} />
         ) : (
@@ -1209,7 +1215,7 @@ export function V3Window({
       running={runningCounts(runs)}
       activePage={active?.startsWith("page:") ? active.slice(5) : null}
       onPageMenu={(id, at) => setOverlay({ pageMenu: id, ...shellPoint(at) })}
-      status={activeSession && bar?.place ? <StatusBar place={bar.place} /> : null}
+      status={activeSession && bar?.place ? <StatusBar place={bar.place} extra={slots.deliberation && bar.tool === "claude" ? slots.deliberation.chip(activeSession) : undefined} /> : null}
       needsYou={needs.length > 0}
       blocker={!!next}
       rightWhy={activeSession ? null : "no session in this tab"}
