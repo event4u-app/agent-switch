@@ -49,6 +49,10 @@ const LIMITS: LimitAccount[] = [
   { identity: "work@example.com", plan: "Max", key: "claude/work", tool: "claude", name: "work", color: "teal", protect: 95, next: true, signIn: false, checkedMs: NOW - MIN, windows: [L("5h", 39, 2 * H + 10 * MIN, 45), L("week", 62, 118 * H, 30), L("week · Opus", 71, 118 * H, 30)] },
   { identity: "me@example.com", plan: "Pro", key: "claude/personal", tool: "claude", name: "personal", color: "pink", protect: 98, next: false, signIn: false, checkedMs: NOW - 2 * MIN, windows: [L("5h", 12, 4 * H, 20), L("week", 23, 53 * H, 70)] },
   { identity: "side@example.com", plan: "Pro", key: "claude/side", tool: "claude", name: "side", color: "purple", protect: 98, next: false, signIn: false, checkedMs: NOW, windows: [L("5h", 94, H + 18 * MIN, 74), L("week", 29, 53 * H, 70)] },
+  // More Claude accounts than the strip's box shows (owner, 2026-11-25): it scrolls, and follows the open session's account.
+  { identity: "studio@example.com", plan: "Max", key: "claude/studio", tool: "claude", name: "studio", color: "blue", protect: 95, next: false, signIn: false, checkedMs: NOW - 3 * MIN, windows: [L("5h", 21, 3 * H + 40 * MIN, 30), L("week", 44, 90 * H, 50)] },
+  { identity: "oss@example.com", plan: "Pro", key: "claude/oss", tool: "claude", name: "oss", color: "green", protect: 98, next: false, signIn: false, checkedMs: NOW - 5 * MIN, windows: [L("5h", 8, 4 * H + 30 * MIN, 10), L("week", 15, 120 * H, 20)] },
+  { identity: "lab@example.com", plan: "Pro", key: "claude/lab", tool: "claude", name: "lab", color: "orange", protect: 98, next: false, signIn: false, checkedMs: NOW - MIN, windows: [L("5h", 57, 2 * H + 45 * MIN, 50), L("week", 33, 70 * H, 40)] },
   { identity: "work@example.com", plan: "Plus", key: "codex/work", tool: "codex", name: "work", color: "teal", protect: 90, next: false, signIn: false, checkedMs: NOW - 14 * MIN, windows: [L("5h", 30, 3 * H + 12 * MIN, 35), L("week", 22, 97 * H, 40)] },
   { identity: "me@example.com", plan: null, key: "codex/personal", tool: "codex", name: "personal", color: "pink", protect: 90, next: false, signIn: true, checkedMs: null, windows: [] },
 ];
@@ -79,7 +83,7 @@ const SESSIONS: RowSession[] = [
     ] }),
   S({ key: "claude/personal/s-themes", title: "Theme system, Darcula default", state: "needs-you", account: { name: "personal", nearLimit: false }, branch: "feat/themes", pr: { number: 145, ci: "SUCCESS", mergeable: "MERGEABLE" }, needsYou: true }),
   S({ key: "codex/work/s-hook", title: "as-hook p95 benchmark", state: "idle", branch: "perf/as-hook", children: [{ id: "c9", label: "subagent rollouts, content not read", kind: "subagent", state: "done", source: "counted", count: 2 }] }),
-  S({ key: "claude/work/s-council", title: "Release plan agent-config 1.9", state: "working", branch: "main",
+  S({ key: "claude/work/s-council", title: "Release plan agent-config 1.9", state: "working", branch: "main", account: { name: "lab", nearLimit: false },
     children: [
       { id: "k1", label: "Council seat · architect", kind: "council-seat", state: "done", source: "lineage" },
       { id: "k2", label: "Council seat · skeptic", kind: "council-seat", state: "working", source: "lineage" },
@@ -106,13 +110,13 @@ const SESSIONS: RowSession[] = [
   S({ key: "claude/work/s-spike", title: "Spike: tmux control mode", state: "done", branch: "spike/tmux-cc", lastActiveMs: NOW - 26 * 60 * MIN, doneToday: true }),
 ];
 
-const BAR: Record<string, { model: string; thinking: string; ctx: number; hosted: boolean; acct: string; color: "teal" | "pink" | "purple"; five: number; protect: number }> = {
+const BAR: Record<string, { model: string; thinking: string; ctx: number; hosted: boolean; acct: string; color: "teal" | "pink" | "purple" | "orange"; five: number; protect: number }> = {
   "claude/work/s-store": { model: "Opus 5.5", thinking: "High", ctx: 58, hosted: true, acct: "work", color: "teal", five: 39, protect: 95 },
   "claude/work/s-spike": { model: "Sonnet 5.5", thinking: "Medium", ctx: 9, hosted: false, acct: "work", color: "teal", five: 39, protect: 95 },
   "claude/personal/s-themes": { model: "Opus 5.5", thinking: "High", ctx: 21, hosted: true, acct: "personal", color: "pink", five: 12, protect: 98 },
   "codex/work/s-hook": { model: "default", thinking: "medium", ctx: 33, hosted: false, acct: "work", color: "teal", five: 30, protect: 90 },
   "claude/work/s-arena": { model: "Opus 5.5", thinking: "High", ctx: 61, hosted: true, acct: "work", color: "teal", five: 39, protect: 95 },
-  "claude/work/s-council": { model: "Opus 5.5", thinking: "High", ctx: 44, hosted: true, acct: "work", color: "teal", five: 39, protect: 95 },
+  "claude/work/s-council": { model: "Opus 5.5", thinking: "High", ctx: 44, hosted: true, acct: "lab", color: "orange", five: 57, protect: 98 },
   "claude/side/s-wedge": { model: "Sonnet 5.5", thinking: "Medium", ctx: 47, hosted: true, acct: "side", color: "purple", five: 94, protect: 98 },
   "claude/personal/s-notes": { model: "Sonnet 5.5", thinking: "Low", ctx: 12, hosted: true, acct: "personal", color: "pink", five: 12, protect: 98 },
   "claude/personal/s-checkout": { model: "Opus 5.5", thinking: "High", ctx: 71, hosted: true, acct: "personal", color: "pink", five: 12, protect: 98 },

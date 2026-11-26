@@ -47,4 +47,13 @@ describe("the subagent board", () => {
     expect(within(view).getByText(/Moved sessions\.json and arms\.json/)).toBeTruthy();
     expect(within(view).queryByText(/Create a file notes\.md/)).toBeNull();
   });
+
+  it("while a subagent is open, its session's row and the subagent's own row both read as selected", () => {
+    render(<Scene />);
+    fireEvent.click(screen.getByRole("button", { name: /Show 3 subagents/ }));
+    fireEvent.click(screen.getByRole("button", { name: /general-purpose · migrate JSON stores/ }));
+    const list = screen.getByLabelText("Sessions window");
+    expect(within(list).getByRole("button", { name: /general-purpose · migrate JSON stores/ }).getAttribute("aria-current")).toBe("true");
+    expect(list.querySelector('[role=button][aria-current=true]:not([data-child-row])')?.textContent).toMatch(/v3 engine/);
+  });
 });

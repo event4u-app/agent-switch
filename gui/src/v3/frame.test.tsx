@@ -54,7 +54,7 @@ describe("window frame (spec §4)", () => {
     act(() => void fireEvent.click(screen.getByLabelText("Summary ⌘I")));
     expect(screen.getByLabelText("Summary ⌘I").querySelector(".bg-ac-warn")).toBeNull();
     act(() => void fireEvent.click(screen.getByLabelText("Library")));
-    expect(onPage).toHaveBeenCalledWith("library");
+    expect(onPage).toHaveBeenCalledWith("library", false);
   });
 
   it("the title bar: one filled button, 'Engine stopped' only when down, the pill turns alert with failing CI", () => {

@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "../lib/utils.js";
-import { ArrowLeftRight, ArrowRightToLine, ClipboardCopy, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, SquareTerminal, Swords, Unplug, Users, Gavel, Wrench, X } from "lucide-react";
+import { ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, ChevronLeft, ChevronRight, ClipboardCopy, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, ListX, SquareX, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, SquareTerminal, Swords, Unplug, Users, Gavel, Wrench, X } from "lucide-react";
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
 import type { ActivityEvent, IdentityColor, ToolEntry } from "../vm/types.js";
@@ -28,7 +28,8 @@ import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } fro
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession, type StatusTab } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
 import type { ReviewFocus } from "./review.js";
-import { DEFAULT_SORT, SessionsZone, sortLive, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
+import { DEFAULT_SORT, SessionsZone, statusGroup, sortLive, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
+import { Segmented } from "../ui/Segmented.js";
 import { SubagentView } from "./subagent-view.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
@@ -38,8 +39,8 @@ import { AccountMark, Act, inShell, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding } from "./keys.js";
-import { EMPTY_TABS, canReopen, closable, closeOthers, closeTab, closeToRight, closeUnpinned, isPageTab, moveTab, nextActive, openTab, pinTab, reopenTab, seedTabs, unpinTab, type TabState } from "./tabs.js";
-import { needSession, nextFocus, shownNeeds } from "./needs.js";
+import { EMPTY_TABS, canReopen, canShift, closable, closeOthers, closeTab, closeToLeft, closeToRight, closeUnpinned, shiftTab, isPageTab, mainTab, moveTab, nextActive, openAnother, openInDefault, openTab, pinTab, reopenTab, seedTabs, sessionOf, unpinTab, type TabState } from "./tabs.js";
+import { NeedRow, needSession, nextFocus, shownNeeds } from "./needs.js";
 import { canCopy, copyConversation } from "./copy-source.js";
 import { Switcher } from "./overlays.js";
 import { DEFAULT_GROUP, GROUP_LABEL, SORT_LABEL, liveOrder, type GroupBy, type SortBy } from "./sessions.js";
@@ -253,7 +254,7 @@ export function V3Window({
   const pages = strip.order.filter(isPageTab).map((id) => id.slice(5) as Page);
   const sessionTabs = strip.order.filter((id) => !isPageTab(id));
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "history" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string; at?: Anchor; moved?: BarChipId[] } | { end: string } | { openin: string; at?: Anchor } | { tabMenu: string; x: number; y: number }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "history" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string; at?: Anchor; moved?: BarChipId[] } | { end: string } | { openin: string; at?: Anchor } | { tabMenu: string; x: number; y: number } | { rowMenu: string; x: number; y: number } | { pageMenu: string; x: number; y: number }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
@@ -274,13 +275,19 @@ export function V3Window({
   const [tableGroup, setTableGroup] = useState<"none" | "project" | undefined>(saved?.tableGroup);
   const [pinnedOnly, setPinnedOnly] = useState(saved?.pinnedOnly ?? false);
   const [focusedNeed, setFocusedNeed] = useState<string | null>(null);
+  // Opens on Running, as alternative B shows it (owner, 2026-11-25); ⌘J brings Needs you to the front.
+  const [paneTab, setPaneTab] = useState<"you" | "running" | "other">("running");
+  // Needs you splits into what a session asks and what the app asks (limits, sign-ins, updates) (owner, 2026-11-25).
+  // Opens on Sessions while a session waits on you, else on System; a pick stays.
+  const [needsKindPick, setNeedsKind] = useState<"sessions" | "system" | null>(null);
+
   const lastActiveOf = (k: string) => data.table.find((t) => t.key === k)?.lastActiveMs ?? null;
   const [focusChild, setFocusChild] = useState<string | null>(null);
   // Hover peek (spec §5.2): after 400 ms on a row, one card at a time, never while a layer is open.
   const [peek, setPeek] = useState<{ key: string; y: number } | null>(null);
   const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeRef = useRef<string | null>(null);
-  activeRef.current = active;
+  activeRef.current = active && sessionOf(active);
   const onPeek = (key: string | null, y: number) => {
     if (peekTimer.current) clearTimeout(peekTimer.current);
     // The active row already shows its facts in the workbench.
@@ -289,11 +296,15 @@ export function V3Window({
   };
   useEffect(() => () => void (peekTimer.current && clearTimeout(peekTimer.current)), []);
 
-  const openPage = useCallback((p: Page) => {
-    setStrip((cur) => openTab(cur, `page:${p}`));
-    setActive(`page:${p}`);
+  // Pages open in the main tab too (owner, 2026-11-26): Arenas, Settings, a review…; a page already open goes
+  // to its tab. A tab of its own only when asked: ⌘/Ctrl-click, middle click, or the right-click menu.
+  const openPage = useCallback((p: Page, newTab = false) => {
+    const id = `page:${p}`;
+    setStrip((cur) => (newTab ? openTab(cur, id) : openInDefault(cur, id).state));
+    setActive(id);
   }, []);
-  const frame = useFrame(openPage);
+  // Done today and Older in the stripe open All sessions on that tab (owner, 2026-11-25).
+  const frame = useFrame((p, newTab) => (p === ("done-today" as PageId) || p === ("older" as PageId) ? (setTableTab((t) => ({ status: p === ("older" as PageId) ? "older" : "today", n: t.n + 1 })), openPage("sessions-table", newTab)) : openPage(p, newTab)));
   /** The tab All sessions opens on, and a counter that remounts it when Done today or Older asks again. */
   const [tableTab, setTableTab] = useState<{ status: StatusTab; n: number }>({ status: "all", n: 0 });
   /** The session's Review tab, at `file` when one was picked; every open is new, so the review goes back to Uncommitted. */
@@ -311,21 +322,37 @@ export function V3Window({
         openPage(`board:${m[1]}`);
       }
     : undefined;
+  // Everything opens in the default tab, the first unpinned session tab (owner, 2026-11-25);
+  // a session that already has a tab goes to it. A new tab is asked for: the right-click menus.
   const openSession = (key: string) => {
-    setStrip((cur) => openTab(cur, key));
-    setActive(key);
+    const r = openInDefault(strip, key);
+    setStrip(r.state);
+    setActive(r.id);
+  };
+  const openInNewTab = (key: string, after?: string) => {
+    const r = openAnother(strip, key, after);
+    setStrip(r.state);
+    setActive(r.id);
+  };
+  /** A new tab for the session, pinned right away (owner, 2026-11-26, as elvau's "open as pinned tab"). */
+  const openInPinnedTab = (key: string) => {
+    const r = openAnother(strip, key);
+    setStrip(pinTab(r.state, r.id));
+    setActive(r.id);
   };
   // 7.7: a subagent opens read-only in place of its parent's body, until Back or another session.
   const [subView, setSubView] = useState<{ parent: string; agentId: string } | null>(null);
   const openSubagent = slots.subagent
     ? (parent: string, agentId: string) => {
         openSession(parent);
+        // The session's children stay unfolded, so the open subagent's row shows as selected (owner, 2026-11-25).
+        setOpenKids(new Set([parent]));
         setSubView({ parent, agentId });
       }
     : undefined;
   // Another session, or the parent's tab closed: the subagent view ends.
   useEffect(() => {
-    if (subView && subView.parent !== active) setSubView(null);
+    if (subView && subView.parent !== (active && sessionOf(active))) setSubView(null);
   }, [active, subView]);
   // The window opens where the user left off, else on the first live session;
   // once, when the sessions are first known (they arrive after the first paint).
@@ -366,22 +393,35 @@ export function V3Window({
   /** Right click on a tab (owner request 2026-11-05): pin, the close family, reopen, and the session's own actions. */
   const tabMenuItems = (id: string): MenuItem[] => {
     const pinnedTab = strip.pinned.includes(id);
+    const isMain = id === mainTab(strip);
+    const before = strip.order.slice(0, strip.order.indexOf(id));
     const after = strip.order.slice(strip.order.indexOf(id) + 1);
     const run = (f: () => void) => () => (setOverlay(null), f());
+    // The main tab (owner, 2026-11-25/26): always first and open, never pinned, never moved.
+    const place: MenuItem[] = isMain
+      ? [{ label: "", note: "Main tab: always first and always open. Everything opens here." }]
+      : [
+          pinnedTab
+            ? { id: "unpin", label: "Unpin tab", icon: <PinOff />, onClick: run(() => setStrip((s) => unpinTab(s, id))) }
+            : { id: "pin", label: "Pin tab", icon: <Pin />, onClick: run(() => setStrip((s) => pinTab(s, id))) },
+          { id: "move-left", label: "Move left", icon: <ChevronLeft />, disabled: !canShift(strip, id, -1), onClick: run(() => setStrip((s) => shiftTab(s, id, -1))) },
+          { id: "move-right", label: "Move right", icon: <ChevronRight />, disabled: !canShift(strip, id, 1), onClick: run(() => setStrip((s) => shiftTab(s, id, 1))) },
+        ];
     const items: MenuItem[] = [
-      pinnedTab
-        ? { id: "unpin", label: "Unpin tab", icon: <PinOff />, onClick: run(() => setStrip((s) => unpinTab(s, id))) }
-        : { id: "pin", label: "Pin tab", icon: <Pin />, onClick: run(() => setStrip((s) => pinTab(s, id))) },
+      ...place,
+      ...(isPageTab(id) ? [] : [{ id: "duplicate", label: "Duplicate tab", icon: <Copy />, onClick: run(() => openInNewTab(sessionOf(id), id)) }]),
       { divider: true, label: "" },
-      { id: "close", label: pinnedTab ? "Close pinned tab" : "Close tab", icon: <X />, onClick: run(() => changeStrip((s) => closeTab(s, id, true))) },
-      { id: "close-others", label: "Close other tabs", disabled: !closable(strip, strip.order.filter((x) => x !== id)).length, onClick: run(() => changeStrip((s) => closeOthers(s, id))) },
+      // The main tab has no Close and nothing to its left (owner, 2026-11-26, as elvau).
+      ...(isMain ? [] : [{ id: "close", label: pinnedTab ? "Close pinned tab" : "Close tab", icon: <X />, onClick: run(() => changeStrip((s) => closeTab(s, id, true))) }]),
+      { id: "close-others", label: "Close other tabs", icon: <ListX />, disabled: !closable(strip, strip.order.filter((x) => x !== id)).length, onClick: run(() => changeStrip((s) => closeOthers(s, id))) },
+      ...(isMain ? [] : [{ id: "close-left", label: "Close tabs to the left", icon: <ArrowLeftToLine />, disabled: !closable(strip, before).length, onClick: run(() => changeStrip((s) => closeToLeft(s, id))) }]),
       { id: "close-right", label: "Close tabs to the right", icon: <ArrowRightToLine />, disabled: !closable(strip, after).length, onClick: run(() => changeStrip((s) => closeToRight(s, id))) },
-      { id: "close-unpinned", label: "Close all unpinned tabs", disabled: !closable(strip, strip.order).length, onClick: run(() => changeStrip(closeUnpinned)) },
+      { id: "close-unpinned", label: "Close all unpinned tabs", icon: <SquareX />, disabled: !closable(strip, strip.order).length, onClick: run(() => changeStrip(closeUnpinned)) },
       { divider: true, label: "" },
       { id: "reopen", label: "Reopen closed tab", icon: <RotateCcw />, kbd: keyLabel(keys.reopenTab, platform), disabled: !canReopen(strip), onClick: run(() => void reopenClosed()) },
     ];
     if (isPageTab(id)) return items;
-    return [...items, { divider: true, label: "" }, ...sessionMenuItems(id)];
+    return [...items, { divider: true, label: "" }, ...sessionMenuItems(sessionOf(id))];
   };
   /** The session's own actions, one list for the ⋯ menu and the tab's menu: Pin reads Unpin when pinned, End… comes last. */
   const sessionMenuItems = (key: string): MenuItem[] => {
@@ -444,6 +484,7 @@ export function V3Window({
 
   // Tool updates join the queue (spec §10.4); limit items open the decision sheet.
   const needs = useMemo(() => allNeeds({ needs: data.needs, tools: data.tools, nowMs: data.nowMs }), [data.needs, data.tools, data.nowMs]);
+  const needsKind = needsKindPick ?? (needs.some((n) => !!needSession(n)) || data.sessions.some((x) => statusGroup(x) === "Needs you") ? "sessions" : "system");
   // The tray's Start session opens the same New-session dialog as ⌘N, once per request.
   const newSessionDone = useRef<number | null>(null);
   useEffect(() => {
@@ -475,6 +516,14 @@ export function V3Window({
     const now = document.activeElement as HTMLElement | null;
     if (focusedNeed) {
       holdNeedOpener();
+      // ⌘J walks the Needs you items: that tab comes to the front first, then the item takes focus.
+      // An item about a child focuses the child's row in the tree instead: the tab that lists its session.
+      const root = focusChild ? findChild(data.sessions, focusChild)?.root : undefined;
+      const want = focusChild ? (root && statusGroup(root) === "Idle" ? "other" : "running") : "you";
+      if (paneTab !== want) return setPaneTab(want);
+      const item = needs.find((n) => n.id === focusedNeed);
+      const kind = item && needSession(item) ? "sessions" : "system";
+      if (!focusChild && item && needsKind !== kind) return setNeedsKind(kind);
       if (!focusChild) [...document.querySelectorAll<HTMLElement>("[data-need]")].find((el) => el.dataset.need === focusedNeed)?.focus();
       return;
     }
@@ -483,7 +532,7 @@ export function V3Window({
     const lost = !now || now === document.body || !now.isConnected || zoneHolds(now);
     if (opener?.isConnected && lost) opener.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusedNeed]);
+  }, [focusedNeed, paneTab, needsKind]);
   // A session at its limit opens its decision sheet by itself (once per item
   // version) and brings the window forward — the user still confirms the move.
   // agent-config's question opens it too (once per request), and a limit it
@@ -532,7 +581,7 @@ export function V3Window({
     else act({ type: "need", item: n });
   };
 
-  const activeSession = active && !active.startsWith("page:") ? active : null;
+  const activeSession = active && !active.startsWith("page:") ? sessionOf(active) : null;
   const runs = runRows(data.sessions);
   const bar = activeSession ? data.bar(activeSession) : null;
   const next = activeSession && !dismissed.has(activeSession) ? data.next(activeSession) : null;
@@ -549,13 +598,14 @@ export function V3Window({
             : PAGE_TAB[p as PageId | "sessions-table"]),
       };
     }
-    const s = data.sessions.find((x) => x.key === id);
-    return { kind: "session" as const, id, title: s?.title ?? id, state: s?.state ?? "idle" };
+    const s = data.sessions.find((x) => x.key === sessionOf(id));
+    return { kind: "session" as const, id, title: s?.title ?? sessionOf(id), state: s?.state ?? "idle" };
   });
   const batch = (keys: string[]): BatchActions => ({
     onClear: () => setSelection(null),
-    onPin: () => act({ type: "batch", op: "onPin", keys }),
-    onArchive: () => act({ type: "batch", op: "onArchive", keys }),
+    // Done with them: the selection ends, the list goes back to normal.
+    onPin: () => (act({ type: "batch", op: "onPin", keys }), setSelection(null)),
+    onArchive: () => (act({ type: "batch", op: "onArchive", keys }), setSelection(null)),
     onClean: () => act({ type: "batch", op: "onClean", keys }),
     onEnd: () => act({ type: "batch", op: "onEnd", keys }),
   });
@@ -749,6 +799,7 @@ export function V3Window({
         onSelect={setActive}
         // A session tab only leaves the strip; the session keeps running in the sidebar (spec §6.1).
         onClose={(id) => changeStrip((s) => closeTab(s, id))}
+        mainId={mainTab(strip)}
         pinned={new Set(strip.pinned)}
         onMenu={(id, at) => setOverlay({ tabMenu: id, ...shellPoint(at) })}
         onMove={(id, target, side) => setStrip((s) => moveTab(s, id, target, side))}
@@ -856,6 +907,16 @@ export function V3Window({
     return { title: c.label, state: c.state, lastActiveMs: t?.lastActiveMs ?? null, tool: tool[0].toUpperCase() + tool.slice(1), account: t?.account.name ?? c.account?.name ?? "", color, model: t?.model ?? null, thinking: t?.thinking ?? null, branch: t?.branch ?? (c.worktree ? `worktree ${c.worktree}` : hit.root.branch), pr: t?.pr ? { number: t.pr.number, state: t.pr.ci === "FAILURE" ? "CI failing" : "open" } : null, children: (c.children ?? []).reduce((n, k) => n + (k.count ?? 1), 0), lastLine: null };
   };
   const pinned = new Set(data.library.filter((l) => l.pinned).map((l) => l.key));
+  // The pane's tabs and filter (owner, 2026-11-25, alternative B + A's search).
+  const liveSessions = (pinnedOnly ? data.sessions.filter((x) => pinned.has(x.key)) : data.sessions).filter((x) => !x.doneToday && !x.older);
+  // No filter of its own: the search in the title bar finds sessions (owner, 2026-11-25).
+  const found = liveSessions;
+  const foundNeeds = needs;
+  // What waits on you from a session: its own needs-you state, or an item (approval, question, CI) about it.
+  const waitingKeys = new Set([...liveSessions.filter((x) => statusGroup(x) === "Needs you").map((x) => x.key), ...needs.map(needSession).filter((k): k is string => !!k)]);
+  const waiting = found.filter((x) => waitingKeys.has(x.key));
+  // An item about a session this list does not hold (ended, filtered, another machine) still shows, as its own row.
+  const orphanNeeds = foundNeeds.filter((n) => { const k = needSession(n); return !!k && !waiting.some((x) => x.key === k); });
   const sessionsWindow = (
     <aside aria-label="Sessions window" data-loaded={data.loading ? "false" : "true"} aria-busy={data.loading || undefined} className="flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-ac-line bg-ac-panel">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-ac-line px-3">
@@ -869,15 +930,54 @@ export function V3Window({
           </IconButton>
         </span>
       </div>
+      {/* Alternative B (owner, 2026-11-25): three tabs instead of stacked zones — Needs you, Running, Other —
+          one list at a time; Done today and Older at the foot. The title bar's search finds sessions. */}
+      <div className="shrink-0 px-2.5 pt-2" data-pane-tabs="">
+        <Segmented
+          label="Show"
+          size="xs"
+          fill
+          dense
+          value={paneTab}
+          onChange={setPaneTab}
+          options={[
+            { value: "you", label: <>Needs you <PaneCount n={needs.length} tone={needs.length ? "warn" : undefined} /></> },
+            { value: "running", label: <>Running <PaneCount n={liveSessions.filter((x) => !waitingKeys.has(x.key) && statusGroup(x) === "Running").length} /></> },
+            { value: "other", label: <>Other <PaneCount n={liveSessions.filter((x) => !waitingKeys.has(x.key) && statusGroup(x) === "Idle").length} /></> },
+          ]}
+        />
+      </div>
       <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <NeedsZone items={needs} away={data.away} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
+        {paneTab === "you" && (
+          <div className="px-2.5 pt-2" data-needs-kind="">
+            <Segmented
+              label="Asked by"
+              size="xs"
+              fill
+              value={needsKind}
+              onChange={setNeedsKind}
+              options={[
+                { value: "sessions", label: <>Sessions <PaneCount n={waiting.length + orphanNeeds.length} /></> },
+                { value: "system", label: <>System <PaneCount n={foundNeeds.filter((n) => !needSession(n)).length} /></> },
+              ]}
+            />
+          </div>
+        )}
+        {paneTab === "you" && needsKind === "system" ? (
+          <NeedsZone full items={foundNeeds.filter((n) => !needSession(n))} away={data.away} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
+        ) : (
         <SessionsZone
-          sessions={pinnedOnly ? data.sessions.filter((x) => pinned.has(x.key)) : data.sessions}
+          // Needs you › Sessions: the waiting sessions as normal tiles; Running; Other: inactive, older ones.
+          // Each session sits in one place only (owner, 2026-11-25).
+          sessions={paneTab === "you" ? waiting : found.filter((x) => !waitingKeys.has(x.key) && statusGroup(x) === (paneTab === "running" ? "Running" : "Idle"))}
           activeKey={activeSession}
+          sort="activity"
+          // No groups, nothing to fold, no sort menu: newest activity on top, always (owner, 2026-11-25).
+          group="none"
+          head={false}
+          pinned={false}
+          card
           comfortable={comfortable}
-          sort={sortBy}
-          group={groupBy}
-          inNeeds={new Set(shownNeeds(needs, focusedNeed).map(needSession).filter((k): k is string => !!k))}
           lastActiveOf={lastActiveOf}
           nowMs={data.nowMs}
           onSubagent={openSubagent}
@@ -888,22 +988,29 @@ export function V3Window({
             return groupBy === "project" ? (t.project ?? null) : groupBy === "account" ? t.account.name : groupBy === "tool" ? t.tool[0].toUpperCase() + t.tool.slice(1) : null;
           }}
           worktreeOf={(k) => data.table.find((x) => x.key === k)?.worktree ?? null}
-          onView={(y) => setOverlay((o) => (o && typeof o === "object" && "listView" in o ? null : { listView: y }))}
-          viewOpen={!!overlay && typeof overlay === "object" && "listView" in overlay}
+          
+          
           onStart={() => setOverlay("new")}
           loading={data.loading}
           onPeek={onPeek}
           focusKey={focusChild}
-          divider={needs.length > 0 || !!data.away}
+          divider={false}
           selection={selection}
           openKeys={openKids}
           onSelect={openSession}
+          onRowMenu={(key, at) => setOverlay({ rowMenu: key, ...shellPoint(at) })}
+          currentChild={subView && subView.parent === activeSession ? subView.agentId : null}
+          under={paneTab === "you" ? (key) => needs.filter((n) => needSession(n) === key).map((n) => <NeedRow key={n.id} bare n={n} focused={n.id === focusedNeed} always={!!data.chatHere?.(n.subject)} onVerb={onVerb} />) : undefined}
           // One session unfolded at a time (owner, 2026-11-24): opening one folds the other.
           onToggleChildren={(k) => setOpenKids((c) => (c.has(k) ? new Set() : new Set([k])))}
           onCheck={(k) => setSelection((c) => { const n = new Set(c ?? []); n.has(k) ? n.delete(k) : n.add(k); return n; })}
           onDoneToday={(which) => (setTableTab((t) => ({ status: which ?? "all", n: t.n + 1 })), openPage("sessions-table"))}
           batch={batch([...(selection ?? [])])}
         />
+        )}
+        {paneTab === "you" && needsKind === "sessions" && orphanNeeds.length > 0 && (
+          <NeedsZone full items={orphanNeeds} away={null} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
+        )}
       </div>
       <LimitsStrip accounts={data.limits} nowMs={data.nowMs} openKey={limitsOpen} currentKey={bar && activeSession ? (data.limits.find((l) => l.tool === activeSession.split("/")[0] && l.name === bar.account.name)?.key ?? null) : null} onOpen={(key) => setOverlay((o) => (o && typeof o === "object" && "limits" in o && o.limits === key ? null : { limits: key }))} onSignIn={(key) => act({ type: "account", op: "sign-in", key })} />
     </aside>
@@ -1030,6 +1137,44 @@ export function V3Window({
           }}
         />
       </Anchored>
+    ) : overlay && typeof overlay === "object" && "rowMenu" in overlay ? (
+      // Right-click on a session in the list: open it here or in a tab of its own, then its own actions.
+      <Anchored onClose={close} className="absolute z-20" style={{ left: overlay.x, top: overlay.y }}>
+        <Menu
+          label="Session"
+          width={260}
+          items={[
+            { id: "open", label: "Open", onClick: () => (close(), openSession(overlay.rowMenu)) },
+            { id: "open-new", label: "Open in new tab", icon: <Plus />, onClick: () => (close(), openInNewTab(overlay.rowMenu)) },
+            { id: "open-pinned", label: "Open in pinned tab", icon: <Pin />, onClick: () => (close(), openInPinnedTab(overlay.rowMenu)) },
+            { divider: true, label: "" },
+            ...sessionMenuItems(overlay.rowMenu),
+          ]}
+        />
+      </Anchored>
+    ) : overlay && typeof overlay === "object" && "pageMenu" in overlay ? (
+      // Right-click on a stripe page button or Settings (owner, 2026-11-26): open it in the main tab, or a tab of its own.
+      <Anchored onClose={close} className="absolute z-20" style={{ left: overlay.x, top: overlay.y }}>
+        <Menu
+          label="Page"
+          width={240}
+          items={[
+            { id: "open", label: "Open", onClick: () => (close(), frame.selectLeft(overlay.pageMenu)) },
+            { id: "open-new", label: "Open in new tab", icon: <Plus />, onClick: () => (close(), frame.selectLeft(overlay.pageMenu, true)) },
+            {
+              id: "open-pinned",
+              label: "Open in pinned tab",
+              icon: <Pin />,
+              onClick: () => {
+                close();
+                frame.selectLeft(overlay.pageMenu, true);
+                const p = overlay.pageMenu === "done-today" || overlay.pageMenu === "older" ? "sessions-table" : overlay.pageMenu;
+                setStrip((s) => pinTab(s, `page:${p}`));
+              },
+            },
+          ]}
+        />
+      </Anchored>
     ) : overlay && typeof overlay === "object" && "tabMenu" in overlay ? (
       <Anchored onClose={close} className="absolute z-20" style={{ left: overlay.x, top: overlay.y }}>
         <Menu label="Tab" width={260} items={tabMenuItems(overlay.tabMenu)} />
@@ -1043,11 +1188,12 @@ export function V3Window({
         {...endFacts(overlay.end)}
         onClose={close}
         onEnd={() => (close(), act({ type: "end", key: overlay.end }))}
-        onCloseTab={() => {
-          const key = overlay.end;
+        // A session in the main tab offers no "Just close the tab": that tab stays.
+        onCloseTab={strip.order.some((id) => sessionOf(id) === overlay.end && id !== mainTab(strip)) ? () => {
+          const key = strip.order.find((id) => sessionOf(id) === overlay.end && id !== mainTab(strip))!;
           close();
           changeStrip((s) => closeTab(s, key, true));
-        }}
+        } : undefined}
       />
     ) : null;
 
@@ -1060,6 +1206,7 @@ export function V3Window({
       historyOpen={overlay === "history"}
       running={runningCounts(runs)}
       activePage={active?.startsWith("page:") ? active.slice(5) : null}
+      onPageMenu={(id, at) => setOverlay({ pageMenu: id, ...shellPoint(at) })}
       needsYou={needs.length > 0}
       blocker={!!next}
       rightWhy={activeSession ? null : "no session in this tab"}
@@ -1074,7 +1221,12 @@ export function V3Window({
           </div>
         ))
       }
-      actions={{ onSearch: () => setOverlay("palette"), onStart: () => setOverlay("new"), onSettings: () => openPage("settings"), onInbox: () => setOverlay((o) => (o === "inbox" ? null : "inbox")), onHistory: () => setOverlay((o) => (o === "history" ? null : "history")), onRestart: () => act({ type: "restart-engine" }) }}
+      actions={{ onSearch: () => setOverlay("palette"), onStart: () => setOverlay("new"), onSettings: (newTab) => openPage("settings", newTab), onInbox: () => setOverlay((o) => (o === "inbox" ? null : "inbox")), onHistory: () => setOverlay((o) => (o === "history" ? null : "history")), onRestart: () => act({ type: "restart-engine" }) }}
     />
   );
+}
+
+/** A tab's or button's count, the pill the stripe and groups use. */
+function PaneCount({ n, tone }: { n: number; tone?: "warn" }) {
+  return <span className={cn("ml-1 inline-flex h-4 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-normal tabular-nums leading-none", tone === "warn" ? "ac-nudge bg-ac-warn-tint text-ac-warn-text" : "bg-ac-line text-ac-soft")}>{n}</span>;
 }

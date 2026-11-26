@@ -456,9 +456,11 @@ interface TreeHandlers {
   onPeek?: (key: string | null, y: number) => void;
   /** ⌘J: the child row to focus (3.4). */
   focusKey?: string | null;
+  /** The child shown in the workbench (a subagent open under its session): its row reads as selected too. */
+  currentChild?: string | null;
 }
 
-function ChildRow({ c, parent, depth, rails, last, onSelect, onSubagent, onBoard, onPeek, focusKey }: { c: ChildModel; parent: string; depth: number; rails: readonly boolean[]; last: boolean } & TreeHandlers) {
+function ChildRow({ c, parent, depth, rails, last, onSelect, onSubagent, onBoard, onPeek, focusKey, currentChild }: { c: ChildModel; parent: string; depth: number; rails: readonly boolean[]; last: boolean } & TreeHandlers) {
   const ref = useRef<HTMLDivElement>(null);
   const viewable = !!onSubagent && subagentOpens(c);
   const board = !!onBoard && boardOpens(c);
@@ -484,9 +486,11 @@ function ChildRow({ c, parent, depth, rails, last, onSelect, onSubagent, onBoard
         })
       }
       onMouseLeave={onPeek && (() => onPeek(null, 0))}
-      className={cn("relative flex h-6 min-w-0 items-center gap-2 rounded-md pr-2 text-[11.5px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ac-brand", opens && "hover:bg-ac-raise")}
+      aria-current={currentChild === c.id ? "true" : undefined}
+      className={cn("relative flex h-6 min-w-0 items-center gap-2 rounded-md pr-2 text-[11.5px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ac-brand", currentChild === c.id ? "bg-ac-line font-medium text-ac-text" : opens && "hover:bg-ac-raise")}
       style={{ paddingLeft: 10 + depth * STEP }}
     >
+      {currentChild === c.id && <Marker />}
       <Guides depth={depth} rails={rails} last={last} stem={!!c.children?.length} />
       <ChildCells c={c} />
     </div>
@@ -504,7 +508,7 @@ export function ChildTree({ kids, parent, depth = 1, rails = [], ...h }: { kids:
   const idle = kids.filter((c) => !isLive(c));
   // Idle children start folded, even a single one; running ones are listed (owner, 2026-11-24).
   const fold = idle.length >= 1;
-  const shown = !fold || idleOpen || (!!h.focusKey && idle.some((c) => holds(c, h.focusKey!)));
+  const shown = !fold || idleOpen || (!!h.focusKey && idle.some((c) => holds(c, h.focusKey!))) || (!!h.currentChild && idle.some((c) => holds(c, h.currentChild!)));
   const items: (ChildModel | "fold")[] = [...live, ...(fold ? (["fold"] as const) : []), ...(shown ? idle : [])];
   return (
     <>
@@ -598,7 +602,12 @@ export function SessionRow({
   onBoard,
   focusKey,
   age,
+  onMenu,
+  currentChild,
 }: {
+  onMenu?: (key: string, at: { x: number; y: number }) => void;
+  /** The child of this session shown in the workbench, if any. */
+  currentChild?: string | null;
   s: RowSession;
   active?: boolean;
   comfortable?: boolean;
@@ -644,6 +653,7 @@ export function SessionRow({
           })
         }
         onMouseLeave={onPeek && (() => onPeek(null, 0))}
+        onContextMenu={onMenu && ((e) => (e.preventDefault(), onPeek?.(null, 0), onMenu(s.key, { x: e.clientX, y: e.clientY })))}
         className={cn("group/row relative rounded-md pl-2.5 pr-2", second ? "py-1.5" : "py-1", block ? null : active ? "bg-ac-raise" : "hover:bg-ac-raise")}
       >
         {active && !block && <Marker />}
@@ -698,11 +708,26 @@ export function SessionRow({
       </div>
       {kids && (
         <div className={cn(!block && "mb-1")}>
-          <ChildTree kids={s.children} parent={s.key} onSelect={onSelect} onSubagent={onSubagent} onBoard={onBoard} onPeek={onPeek} focusKey={focusKey} />
+          <ChildTree kids={s.children} parent={s.key} onSelect={onSelect} onSubagent={onSubagent} onBoard={onBoard} onPeek={onPeek} focusKey={focusKey} currentChild={currentChild} />
         </div>
       )}
     </div>
   );
+}
+
+/**
+ * Status grouping: ended sessions stay one click away in two rows pinned under the list,
+ * Done today and Older; each opens the All sessions window (owner, 2026-11-24).
+ * The data marks a long-quiet session `older` instead of `doneToday`; midnight still decides the row. Pure.
+ */
+export function endedRows(sessions: readonly RowSession[], nowMs: number | undefined, lastActiveOf: (key: string) => number | null = () => null): { id: "Done today" | "Older"; count: number }[] {
+  const ended = sessions.filter((s) => s.doneToday || s.older);
+  const midnight = nowMs == null ? null : new Date(nowMs).setHours(0, 0, 0, 0);
+  const endedAt = (s: RowSession) => s.lastActiveMs ?? lastActiveOf(s.key);
+  return [
+    { id: "Done today", count: ended.filter((s) => midnight == null || (endedAt(s) ?? midnight) >= midnight).length },
+    { id: "Older", count: ended.filter((s) => midnight != null && (endedAt(s) ?? midnight) < midnight).length },
+  ];
 }
 
 export function SessionsZone({
@@ -734,7 +759,25 @@ export function SessionsZone({
   focusKey,
   inNeeds,
   batch,
+  head = true,
+  pinned = true,
+  card,
+  onRowMenu,
+  currentChild,
+  under,
 }: {
+  /** Inside a tile, under its session row: what the session asks of you (Needs you › Sessions). */
+  under?: (key: string) => ReactNode;
+  /** A subagent open in the workbench: its row is selected under its (active) session. */
+  currentChild?: string | null;
+  /** Right-click on a row: its menu at the pointer (owner, 2026-11-25: open in a new tab, …). */
+  onRowMenu?: (key: string, at: { x: number; y: number }) => void;
+  /** The "Sessions N · Status" head; the window's tabs name the list instead (owner, 2026-11-25). */
+  head?: boolean;
+  /** Done today and Older pinned at the foot; the window draws them under its search instead. */
+  pinned?: boolean;
+  /** The Running tab: each session a card (owner, 2026-11-25, alternative B). */
+  card?: boolean;
   /** Sessions a row of the Needs-you zone already shows: under the status grouping they are not listed twice (proposal B). */
   inNeeds?: ReadonlySet<string>;
   /** The tray card's variant (board "tray"): a 24 px head. */
@@ -789,16 +832,7 @@ export function SessionsZone({
   const byKey = new Map(sorted.map((s) => [s.key, s]));
   const live = order.map((k) => byKey.get(k)!);
   const done = sessions.filter((s) => s.doneToday).length;
-  // Status grouping: ended sessions stay one click away in two rows pinned under the list,
-  // Done today and Older; each opens the All sessions window (owner, 2026-11-24).
-  // The data marks a long-quiet session `older` instead of `doneToday`; midnight still decides the row.
-  const ended = sessions.filter((s) => s.doneToday || s.older);
-  const midnight = nowMs == null ? null : new Date(nowMs).setHours(0, 0, 0, 0);
-  const endedAt = (s: RowSession) => s.lastActiveMs ?? lastActiveOf(s.key);
-  const doneRows = [
-    { id: "Done today", count: ended.filter((s) => midnight == null || (endedAt(s) ?? midnight) >= midnight).length },
-    { id: "Older", count: ended.filter((s) => midnight != null && (endedAt(s) ?? midnight) < midnight).length },
-  ].filter((g) => g.count > 0);
+  const doneRows = endedRows(sessions, nowMs, lastActiveOf).filter((g) => g.count > 0);
   const byStatus = group === "status";
   const grouped = byStatus || (group !== "none" && !!groupOf);
   const groupKey = (s: RowSession) => (byStatus ? statusGroup(s) : (groupOf!(s.key) ?? ""));
@@ -834,8 +868,8 @@ export function SessionsZone({
   return (
     // A column that fills the window, so Done today and Older sit at its foot, right above the limits.
     <section aria-label="Sessions" className="flex flex-1 flex-col">
-      {divider ? <div className="mx-3.5 my-1.5 h-px bg-ac-line" /> : <div className="h-2" />}
-      <div className={cn("flex items-center gap-2 px-3.5", tray ? "mt-0.5 h-6" : "sticky top-0 z-[1] h-8 bg-ac-panel")}>
+      {!head ? <div className="h-1.5" /> : divider ? <div className="mx-3.5 my-1.5 h-px bg-ac-line" /> : <div className="h-2" />}
+      {head && <div className={cn("flex items-center gap-2 px-3.5", tray ? "mt-0.5 h-6" : "sticky top-0 z-[1] h-8 bg-ac-panel")}>
         <span className="text-[11px] font-semibold text-ac-soft">Sessions</span>
         <span className="text-[11px] text-ac-muted">{live.length}</span>
         {onView && (
@@ -856,9 +890,10 @@ export function SessionsZone({
             <ChevronDown className="size-3" />
           </button>
         )}
-      </div>
-      {selection && <BatchBar compact count={selection.size} actions={batch} className="mx-1.5 mb-1" />}
-      <div className="px-1.5" data-session-list {...holdBind}>
+      </div>}
+      {selection && <BatchBar compact count={selection.size} actions={batch} className={cn("mb-1.5", card ? "mx-2.5" : "mx-1.5")} />}
+      {/* Cards line up with the tabs over them and the filter under them (owner, 2026-11-25): the same 10 px inset. */}
+      <div className={card ? "px-2.5" : "px-1.5"} data-session-list {...holdBind}>
         {live.length === 0 && !loading && (
           <p className="px-2 py-1.5 text-[12px] text-ac-muted">
             No sessions running.{" "}
@@ -895,7 +930,8 @@ export function SessionsZone({
               <span>{wtRows.length}</span>
             </h4>
           ) : null,
-          ...wtRows.map((s) => (
+          ...wtRows.map((s) => {
+          const row = (
           <SessionRow
             key={s.key}
             s={s}
@@ -912,8 +948,20 @@ export function SessionsZone({
             onBoard={onBoard}
             focusKey={focusKey}
             age={ageOf(s)}
+            onMenu={onRowMenu}
+            currentChild={s.key === activeKey ? currentChild : null}
           />
-          )),
+          );
+          // A card: one frame per session; the open one says so with the row's own marker, not a second frame.
+          return card ? (
+            <div key={s.key} data-session-card="" className="mb-1.5 rounded-md border border-ac-line bg-ac-bg/40 p-0.5">
+              {row}
+              {under?.(s.key)}
+            </div>
+          ) : (
+            row
+          );
+          }),
           wtRows.length < all.length ? (
             <button key={`m:${g}:${i}`} type="button" onClick={() => setExpanded((x) => new Set([...x, `${g}\0${i}`]))} className="ml-[26px] flex h-6 items-center text-[11px] text-ac-muted hover:text-ac-text">
               {all.length - wtRows.length} more ›
@@ -930,7 +978,7 @@ export function SessionsZone({
           </div>
         )}
       </div>
-      {byStatus && doneRows.length > 0 && (
+      {pinned && byStatus && doneRows.length > 0 && (
         <div data-done-groups="" className="sticky bottom-0 z-[1] mt-auto border-t border-ac-line bg-ac-panel px-1.5 py-1">
           {/* Each row is one full-width button; Clean up lives in All sessions for now (owner, 2026-11-24). */}
           {doneRows.map((g) => (

@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { ArrowDown, ArrowDownRight, ArrowRight, ArrowUp, ArrowUpRight, Check, ChevronDown, CircleX, Ellipsis, Eye, Lightbulb, Lock, MessageSquareText, Pin, Server, SquareTerminal, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ArrowDownRight, ArrowRight, ArrowUp, ArrowUpRight, Check, ChevronDown, CircleX, Ellipsis, Eye, Lightbulb, Lock, MessageSquareText, Server, SquareTerminal, TriangleAlert, X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
@@ -27,6 +27,13 @@ export const TAB_ON = "border-ac-line border-t-ac-brand bg-ac-bg text-ac-text";
 
 export type TabItem = { kind: "page"; id: string; label: string; icon: ReactNode } | { kind: "session"; id: string; title: string; state: SessionState };
 
+/** Two letters for a pinned session tab: the first letters of its first two words ("Signing arena: …" → "SA"). */
+export const monogram = (title: string): string => {
+  const w = title.match(/[\p{L}\p{N}]+/gu) ?? [];
+  const [a = "?", b] = w;
+  return (b ? a.charAt(0) + b.charAt(0) : a.slice(0, 2)).toUpperCase();
+};
+
 /** Pointer travel before a press on a tab becomes a drag. */
 const DRAG_PX = 4;
 
@@ -38,12 +45,15 @@ export function TabStrip({
   pinned,
   onMenu,
   onMove,
+  mainId,
 }: {
+  /** The main tab: always first, fixed at the left; everything opens there, so it has no close and does not move (owner, 2026-11-25/26). */
+  mainId?: string | null;
   tabs: TabItem[];
   activeId: string;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
-  /** Pinned tabs: first, tinted, marked with a pin, no close button (owner request 2026-11-05). */
+  /** Pinned tabs: right after the main tab, icon only, no close button (owner, 2026-11-26, after the elvau tabs). */
   pinned?: ReadonlySet<string>;
   /** Right click: the tab's menu at the pointer (window coordinates). */
   onMenu?: (id: string, at: { x: number; y: number }) => void;
@@ -51,9 +61,10 @@ export function TabStrip({
   onMove?: (id: string, target: string, side: "before" | "after") => void;
 }) {
   const isPin = (id: string) => !!pinned?.has(id);
-  // Pinned first, then pages (spec §6.1), then sessions; the given order inside each.
-  const rank = (t: TabItem) => (isPin(t.id) ? 0 : t.kind === "page" ? 1 : 2);
+  // The main tab, then pinned, then pages (spec §6.1), then sessions; the given order inside each.
+  const rank = (t: TabItem) => (t.id === mainId ? -1 : isPin(t.id) ? 0 : t.kind === "page" ? 1 : 2);
   const ordered = [...tabs].sort((a, b) => rank(a) - rank(b));
+  const rankOf = (id: string) => rank(ordered.find((t) => t.id === id)!);
   const [drag, setDrag] = useState<{ id: string; x0: number; moving: boolean; over: { id: string; side: "before" | "after" } | null } | null>(null);
   const dragRef = useRef(drag);
   dragRef.current = drag;
@@ -63,7 +74,7 @@ export function TabStrip({
     if (!dragging) return;
     const up = () => {
       const d = dragRef.current;
-      if (d?.moving && d.over && d.over.id !== d.id) onMove?.(d.id, d.over.id, d.over.side);
+      if (d?.moving && d.over && d.over.id !== d.id && rankOf(d.over.id) === rankOf(d.id)) onMove?.(d.id, d.over.id, d.over.side);
       moved.current = !!d?.moving;
       setDrag(null);
     };
@@ -96,42 +107,39 @@ export function TabStrip({
     refocus.current = null;
     focusTab(stripRef.current, id);
   });
-  let n = 0;
-  return (
-    <div
-      ref={stripRef}
-      role="tablist"
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusId(null);
-      }}
-      // Like browser tabs (owner, 2026-11-25): tabs shrink first, then the strip scrolls sideways;
-      // it never runs past the window or under the right stripe. The base line is an inset shadow, so
-      // the clipped strip still lets the open tab cover it.
-      className={cn("flex h-9 min-w-0 shrink-0 items-end gap-px overflow-x-auto overflow-y-hidden bg-ac-rail px-1 shadow-[inset_0_-1px_0_var(--ac-line)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", drag?.moving && "cursor-grabbing select-none")}>
-      {ordered.map((t) => {
+  // ⌘1…⌘9 follow the session tabs in the order shown.
+  const num = new Map<string, number>();
+  ordered.filter((t) => t.kind === "session").forEach((t, i) => num.set(t.id, i + 1));
+  const main = ordered.find((t) => t.id === mainId);
+  const pins = ordered.filter((t) => t.id !== mainId && isPin(t.id));
+  const rest = ordered.filter((t) => t.id !== mainId && !isPin(t.id));
+  const sep = (k: string) => <span key={k} aria-hidden data-tab-sep className="mx-1 mb-2 h-4 w-px shrink-0 bg-ac-line" />;
+  const tab = (t: TabItem) => {
         const on = t.id === activeId;
         const pin = isPin(t.id);
-        const idx = t.kind === "session" ? ++n : 0;
+        const isMain = t.id === mainId;
+        const idx = num.get(t.id) ?? 0;
         const name = t.kind === "session" ? t.title : t.label;
-        const dropAt = drag?.moving && drag.over?.id === t.id && drag.id !== t.id ? drag.over.side : null;
+        const dropAt = drag?.moving && drag.over?.id === t.id && drag.id !== t.id && rankOf(drag.id) === rank(t) ? drag.over.side : null;
         return (
           <div
             key={t.id}
             role="tab"
             aria-selected={on}
             tabIndex={t.id === stop ? 0 : -1}
-            aria-keyshortcuts={pin ? undefined : "Delete"}
+            aria-label={pin ? name : undefined}
+            aria-keyshortcuts={pin || isMain ? undefined : "Delete"}
             onFocus={() => setFocusId(t.id)}
             onKeyDown={(e) => {
               if (e.metaKey || e.ctrlKey || e.altKey) return;
               const i = ordered.findIndex((x) => x.id === t.id);
               const at = (k: number) => ordered[(k + ordered.length) % ordered.length]?.id;
-              const strip = e.currentTarget.parentElement;
+              const strip = stripRef.current;
               const go =
                 e.key === "ArrowRight" ? at(i + 1) : e.key === "ArrowLeft" ? at(i - 1) : e.key === "Home" ? at(0) : e.key === "End" ? at(ordered.length - 1) : null;
               if (go) focusTab(strip, go);
               else if (e.key === "Enter" || e.key === " ") onSelect(t.id);
-              else if ((e.key === "Delete" || e.key === "Backspace") && !pin) {
+              else if ((e.key === "Delete" || e.key === "Backspace") && !pin && !isMain) {
                 refocus.current = ordered.length > 1 ? (i + 1 < ordered.length ? at(i + 1) : at(i - 1)) ?? null : null;
                 onClose(t.id);
               } else return;
@@ -141,6 +149,7 @@ export function TabStrip({
             }}
             data-tab-id={t.id}
             data-pinned={pin || undefined}
+            data-main={isMain || undefined}
             onClick={() => {
               // The click that ends a drag does not also select.
               if (moved.current) return void (moved.current = false);
@@ -148,7 +157,7 @@ export function TabStrip({
             }}
             onAuxClick={(e) => {
               // Middle click closes, like a browser — never a pinned tab.
-              if (e.button === 1 && !pin) (e.preventDefault(), onClose(t.id));
+              if (e.button === 1 && !pin && !isMain) (e.preventDefault(), onClose(t.id));
             }}
             onContextMenu={(e) => {
               if (!onMenu) return;
@@ -156,7 +165,8 @@ export function TabStrip({
               onMenu(t.id, { x: e.clientX, y: e.clientY });
             }}
             onPointerDown={(e) => {
-              if (e.button !== 0 || !onMove || (e.target as HTMLElement).closest("[data-tab-close]")) return;
+              // The main tab stays put: it does not drag.
+              if (e.button !== 0 || !onMove || isMain || (e.target as HTMLElement).closest("[data-tab-close]")) return;
               moved.current = false;
               setDrag({ id: t.id, x0: e.clientX, moving: false, over: null });
             }}
@@ -168,42 +178,61 @@ export function TabStrip({
               const side = e.clientX < r.left + r.width / 2 ? "before" : "after";
               if (moving !== d.moving || d.over?.id !== t.id || d.over.side !== side) setDrag({ ...d, moving, over: { id: t.id, side } });
             }}
-            title={`${name}${t.kind === "session" && idx <= 9 ? ` · ⌘${idx}` : ""}${pin ? " · pinned" : ""}`}
+            title={`${name}${t.kind === "session" && idx && idx <= 9 ? ` · ⌘${idx}` : ""}${pin ? " · pinned" : ""}${isMain ? " · main tab: everything opens here" : ""}`}
             className={cn(
               TAB,
-              t.kind === "session" ? "group min-w-[120px] max-w-[220px] shrink" : "min-w-[120px] max-w-[300px] shrink",
-              on ? TAB_ON : pin ? "border-transparent bg-ac-brand-tint text-ac-soft hover:text-ac-text" : "border-transparent text-ac-muted hover:bg-ac-raise hover:text-ac-text",
-              on && pin && "bg-ac-brand-tint",
+              pin ? "shrink-0 justify-center gap-1.5 px-2.5" : isMain ? cn("group min-w-[120px] shrink-0", t.kind === "session" ? "max-w-[220px]" : "max-w-[300px]") : t.kind === "session" ? "group min-w-[120px] max-w-[220px] shrink" : "min-w-[120px] max-w-[300px] shrink",
+              on ? TAB_ON : "border-transparent text-ac-muted hover:bg-ac-raise hover:text-ac-text",
               drag?.moving && drag.id === t.id && "opacity-50",
+              // While a tab drags, the tabs of the other groups dim: it can only land among its own.
+              drag?.moving && drag.id !== t.id && rankOf(drag.id) !== rank(t) && "opacity-40",
             )}
           >
             {/* Where the dragged tab lands. */}
             {dropAt && <span aria-hidden data-drop={dropAt} className={cn("pointer-events-none absolute inset-y-1 w-0.5 rounded-full bg-ac-brand", dropAt === "before" ? "-left-px" : "-right-px")} />}
             {t.kind === "session" ? <SessionStateIcon state={t.state} /> : t.icon}
-            <span className="truncate">{name}</span>
             {pin ? (
-              // Pinned: no close button; it closes from its menu only.
-              <span className="ml-auto inline-flex shrink-0 items-center gap-1">
-                {t.kind === "session" && idx <= 9 && <span className="font-ac-mono text-[10px] text-ac-muted">⌘{idx}</span>}
-                <Pin aria-label="Pinned" className="size-3 text-ac-brand-text" />
-              </span>
-            ) : t.kind === "session" ? (
+              // Pinned: compact, no close. A page shows its icon only; a session its state and a two-letter mark, so two pinned sessions tell apart.
+              t.kind === "session" && <span aria-hidden className="font-ac-mono text-[10px] font-semibold">{monogram(name)}</span>
+            ) : (
+              <span className={cn("truncate", isMain && "font-medium")}>{name}</span>
+            )}
+            {pin ? null : t.kind === "session" ? (
               // The shortcut sits in the slot; hover or keyboard focus swaps it for the × (spec §6.1: closing keeps the session).
               // The × is pointer-only and hidden from the a11y tree: a tab may hold no control, and Delete closes it.
               <span className="relative ml-auto inline-flex h-4 min-w-4 shrink-0 items-center justify-end">
-                {idx <= 9 && <span className="font-ac-mono text-[10px] text-ac-muted group-hover:invisible group-focus-visible:invisible">⌘{idx}</span>}
-                <span aria-hidden data-tab-close onClick={(e) => (e.stopPropagation(), onClose(t.id))} className="absolute inset-y-0 right-0 inline-flex cursor-pointer items-center rounded opacity-0 hover:bg-ac-raise group-hover:opacity-100 group-focus-visible:opacity-100">
+                {idx <= 9 && <span className={cn("font-ac-mono text-[10px] text-ac-muted", !isMain && "group-hover:invisible group-focus-visible:invisible")}>⌘{idx}</span>}
+                {!isMain && <span aria-hidden data-tab-close onClick={(e) => (e.stopPropagation(), onClose(t.id))} className="absolute inset-y-0 right-0 inline-flex cursor-pointer items-center rounded opacity-0 hover:bg-ac-raise group-hover:opacity-100 group-focus-visible:opacity-100">
                   <X className="size-3 text-ac-muted hover:text-ac-text" />
-                </span>
+                </span>}
               </span>
-            ) : (
+            ) : isMain ? null : (
               <span aria-hidden data-tab-close onClick={(e) => (e.stopPropagation(), onClose(t.id))} className="inline-flex cursor-pointer">
                 <X className="size-3 text-ac-muted" />
               </span>
             )}
           </div>
         );
-      })}
+  };
+  return (
+    <div
+      ref={stripRef}
+      role="tablist"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusId(null);
+      }}
+      // The main tab is fixed at the left; pinned tabs follow, then the rest (owner, 2026-11-26, as in elvau).
+      // Like browser tabs (owner, 2026-11-25): tabs shrink first, then the part after the main tab scrolls sideways;
+      // it never runs past the window or under the right stripe. The base line is an inset shadow, so
+      // the clipped strip still lets the open tab cover it.
+      className={cn("flex h-9 min-w-0 shrink-0 items-end bg-ac-rail px-1 shadow-[inset_0_-1px_0_var(--ac-line)]", drag?.moving && "cursor-grabbing select-none")}>
+      {main && tab(main)}
+      {main && (pins.length > 0 || rest.length > 0) && sep("main")}
+      <div className="flex h-full min-w-0 flex-1 items-end gap-px overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {pins.map(tab)}
+        {pins.length > 0 && rest.length > 0 && sep("pins")}
+        {rest.map(tab)}
+      </div>
     </div>
   );
 }
@@ -326,7 +355,7 @@ function fitChips(box: HTMLElement): BarChipId[] {
   return moved;
 }
 
-export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; menuOpen?: boolean; /** Why the account chip cannot open the decision sheet now; absent: it can. */ accountWhy?: string | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; /** Unused since model and thinking share one chip; kept so callers need not change. */ thinking?: (x: number) => void; /** `moved`: the chips that left the bar, so ⋯ offers them. */ menu: (trigger: HTMLElement, moved: BarChipId[]) => void } }) {
+export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; menuOpen?: boolean; /** Why the account chip cannot open the decision sheet now; absent: it can. */ accountWhy?: string | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; /** Unused since model and thinking share one chip; kept so callers need not change. */ thinking?: (x: number) => void; /** `moved`: the chips that left the bar, so ⋯ offers them. */ menu: (trigger: HTMLElement, moved: BarChipId[]) => void; /** End… one click away (owner, 2026-11-25): a red ✕ beside ⋯; absent: none. */ end?: () => void } }) {
   const t = tone(s.account.fiveH, s.account.protect);
   // 8.6: a chip that does not fit leaves the bar and moves into ⋯, never clipped.
   const clip = useRef<HTMLDivElement>(null);
@@ -430,6 +459,11 @@ export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { 
       <IconButton {...POPOVER_TRIGGER} label="Session actions" aria-haspopup="menu" aria-expanded={!!menuOpen} className="size-7" onClick={(e) => on.menu(e.currentTarget, moved)}>
         <Ellipsis />
       </IconButton>
+      {on.end && (
+        <IconButton label="End session…" className="size-7 text-ac-alert-text hover:bg-ac-alert-tint hover:text-ac-alert-text" onClick={on.end}>
+          <X />
+        </IconButton>
+      )}
     </div>
   );
 }

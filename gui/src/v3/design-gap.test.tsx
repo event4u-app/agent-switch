@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useLayoutEffect } from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { V3Window, type V3Data } from "./window.js";
+import { paneTab } from "./pane-tabs.test-helper.js";
 import { data, slots } from "./window-fixture.js";
 
 afterEach(cleanup);
@@ -164,7 +165,7 @@ describe("Sessions window header (spec §5)", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
-  it("⋯ offers select, density and pinned only; the zone head sorts and groups", () => {
+  it("⋯ offers select, density and pinned only; the list has no sort or group control", () => {
     const store = { load: vi.fn(() => null), save: vi.fn() };
     const d = data();
     render(
@@ -184,16 +185,14 @@ describe("Sessions window header (spec §5)", () => {
     expect(within(view()).getAllByRole("menuitem").map((b) => b.textContent)).toEqual(["Select", "DensityComfortable", "Show pinned only"]);
     fireEvent.click(screen.getByLabelText("Select · density · show pinned"));
     const win = screen.getByLabelText("Sessions window");
-    fireEvent.click(within(win).getByTitle("Sort and group"));
-    fireEvent.click(within(screen.getByRole("menu", { name: "Sort and group" })).getByText("Project / folder"));
-    expect(within(win).getByTitle("Sort and group").textContent).toBe("Project · Status");
-    expect(within(win).getByText("agent-switch")).toBeTruthy();
-    expect(within(win).getByText("shop")).toBeTruthy();
+    // Newest activity on top, always: no sort, no groups, nothing to fold (owner, 2026-11-25).
+    expect(within(win).queryByTitle("Sort and group")).toBeNull();
+    expect(within(win).queryByRole("button", { expanded: true })).toBeNull();
     fireEvent.click(within(view()).getByText("Show pinned only"));
     expect(within(win).queryByText("Event store")).toBeNull();
     expect(within(win).getByText("Checkout flow")).toBeTruthy();
     fireEvent.click(within(view()).getByText("Density"));
-    expect(store.save).toHaveBeenLastCalledWith(expect.objectContaining({ comfortable: false, group: "project", sort: "status", pinnedOnly: true }));
+    expect(store.save).toHaveBeenLastCalledWith(expect.objectContaining({ comfortable: false, pinnedOnly: true }));
     fireEvent.click(within(view()).getByText("Select"));
     expect(within(win).getAllByRole("checkbox").length).toBeGreaterThan(0);
   });
@@ -417,7 +416,9 @@ describe("the v3 keyboard (spec §12)", () => {
   it("⌘2 selects the second session tab; ⌃Tab cycles recent sessions and picks on release", () => {
     const d = data();
     mountMac({ sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow" }] });
-    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Checkout flow"));
+    // A click opens in the default tab; a second tab is asked for (owner, 2026-11-25).
+    fireEvent.contextMenu(within(screen.getByLabelText("Sessions window")).getByText("Checkout flow"));
+    fireEvent.click(within(screen.getByRole("menu", { name: "Session" })).getByText("Open in new tab"));
     press("1");
     expect(screen.getByRole("tab", { name: /Event store/ }).getAttribute("aria-selected")).toBe("true");
     press("2");

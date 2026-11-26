@@ -114,18 +114,6 @@ describe("⌘J from a focused terminal (8.6)", () => {
   });
 });
 
-describe("the sort menu names its real default (8.6)", () => {
-  it("Status carries the default hint, Activity none", () => {
-    mount();
-    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByTitle("Sort and group"));
-    const menu = screen.getByRole("menu", { name: "Sort and group" });
-    // "Status" twice: the sort, and the grouping (proposal B) — both are the defaults.
-    const [sortStatus, groupStatus] = within(menu).getAllByRole("menuitem", { name: /^Status/ });
-    expect(sortStatus.textContent).toMatch(/default/);
-    expect(groupStatus.textContent).toMatch(/default/);
-    expect(within(menu).getByRole("menuitem", { name: /^Activity/ }).textContent).not.toMatch(/default/);
-  });
-});
 
 describe("the All-sessions table follows the sidebar (8.6)", () => {
   it("lists the session that needs you first, as the sidebar does, though another was active later", () => {
@@ -182,8 +170,8 @@ describe("the right rail on a page tab (8.6)", () => {
       fireEvent.click(b);
       expect(b.getAttribute("aria-pressed")).toBe("false");
     }
-    // Back on the session, its panel is still the one it had.
-    fireEvent.click(screen.getByRole("tab", { name: /Event store/ }));
+    // Back on the session (Settings took the main tab, so from the list), its panel is still the one it had.
+    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
     expect(rail().getByLabelText(/^Summary/).getAttribute("aria-pressed")).toBe("true");
     expect(rail().getByLabelText(/^Summary/).getAttribute("aria-disabled")).toBeNull();
   });
