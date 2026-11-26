@@ -225,7 +225,8 @@ export function TabStrip({
       // Like browser tabs (owner, 2026-11-25): tabs shrink first, then the part after the main tab scrolls sideways;
       // it never runs past the window or under the right stripe. The base line is an inset shadow, so
       // the clipped strip still lets the open tab cover it.
-      className={cn("flex h-9 min-w-0 shrink-0 items-end bg-ac-rail px-1 shadow-[inset_0_-1px_0_var(--ac-line)]", drag?.moving && "cursor-grabbing select-none")}>
+      // On the island itself, no band of its own (owner, 2026-11-26, islands).
+      className={cn("flex h-9 min-w-0 shrink-0 items-end px-1 shadow-[inset_0_-1px_0_var(--ac-line)]", drag?.moving && "cursor-grabbing select-none")}>
       {main && tab(main)}
       {main && (pins.length > 0 || rest.length > 0) && sep("main")}
       <div className="flex h-full min-w-0 flex-1 items-end gap-px overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -307,7 +308,7 @@ export function StatusBar({ place, home }: { place: SessionPlace; /** The home f
   const path = place.cwd ? tildePath(place.cwd, home) : null;
   const sep = <span aria-hidden className="h-3 w-px shrink-0 bg-ac-line" />;
   return (
-    <footer role="contentinfo" aria-label="Session status" data-status-bar="" className="flex h-6 shrink-0 items-center gap-2.5 border-t border-ac-line bg-ac-rail px-3 text-[11px] text-ac-muted">
+    <footer role="contentinfo" aria-label="Session status" data-status-bar="" className="flex h-7 shrink-0 items-center gap-2.5 bg-ac-frame px-14 text-[11px] text-ac-muted">
       {place.project && (
         <span className="inline-flex min-w-0 shrink-0 items-center gap-1.5" title={place.projectRoot ? `Project · ${place.projectRoot}` : "Project"}>
           <FolderGit2 aria-hidden className="size-3.5 shrink-0" />
@@ -336,7 +337,7 @@ export function StatusBar({ place, home }: { place: SessionPlace; /** The home f
         <span className="inline-flex min-w-0 shrink-0 items-center gap-1.5" title={place.worktree ? `Branch ${place.branch} · in a worktree` : `Branch ${place.branch}`}>
           <GitBranch aria-hidden className="size-3.5 shrink-0" />
           <span className="max-w-[220px] truncate font-ac-mono">{place.branch}</span>
-          {place.worktree && <span className="inline-flex h-4 items-center rounded border border-ac-line px-1 pb-px text-[10px] leading-none text-ac-soft">worktree</span>}
+          {place.worktree && <span className="inline-flex h-4 items-center rounded border border-ac-line2 px-1 pb-px text-[10px] leading-none text-ac-soft">worktree</span>}
           {!!place.ahead && <span title={`${place.ahead} ahead of upstream`}>↑{place.ahead}</span>}
           {!!place.behind && <span title={`${place.behind} behind upstream`}>↓{place.behind}</span>}
         </span>

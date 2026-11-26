@@ -171,6 +171,7 @@ body {
   --ac-bg: #070b12;
   --ac-panel: #0d131d;
   --ac-rail: #0a1018;
+  --ac-frame: #212731;
   --ac-raise: #131c2a;
   --ac-line: #1c2738;
   --ac-line2: #2a3445;
@@ -223,6 +224,7 @@ body {
   --ac-bg: #f3f5f9;
   --ac-panel: #ffffff;
   --ac-rail: #fafbfd;
+  --ac-frame: #e7e9ed;
   --ac-raise: #eef2f7;
   --ac-line: #dde3ec;
   --ac-line2: #c3ccd9;

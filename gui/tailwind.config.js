@@ -43,6 +43,7 @@ export default {
         "ac-bg": "var(--ac-bg)",
         "ac-panel": "var(--ac-panel)",
         "ac-rail": "var(--ac-rail)",
+        "ac-frame": "var(--ac-frame)",
         "ac-raise": "var(--ac-raise)",
         "ac-line": "var(--ac-line)",
         "ac-line2": "var(--ac-line2)",
