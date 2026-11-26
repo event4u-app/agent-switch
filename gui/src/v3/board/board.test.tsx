@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
-import { arenaModel, changed, matchCard, phaseLabel, reasonOf } from "./arena-model.js";
+import { arenaModel, arenaPace, changed, matchCard, matchPace, phaseLabel, reasonOf } from "./arena-model.js";
 import { ArenaBoard } from "./ArenaBoard.js";
 import { BoardPage, boardTabs, pickTab } from "./BoardPage.js";
 import { CouncilBoard, seatPlace, seatPlaceWithHuman, seatWidth, tableSeats } from "./CouncilBoard.js";
 import { resultPreview, WorkflowBoard } from "./WorkflowBoard.js";
-import type { BracketView, CouncilLive, CouncilMessage, CouncilView, Orchestration, Scores, WorkflowRun } from "./types.js";
+import type { BracketView, CouncilLive, CouncilMessage, CouncilView, Orchestration, Scores, WorkflowAgent, WorkflowRun } from "./types.js";
 import { boardChildren, parseBoardChildId } from "../adapter/data.js";
 import { boardOpens, childOpens } from "../sessions.js";
 
@@ -131,6 +131,82 @@ const council = (over: Partial<CouncilView> = {}): CouncilView => ({
   ...over,
 });
 
+describe("match flyout: the judge's chat and how far it is (owner, 2026-11-26)", () => {
+  const MIN = 60_000;
+  const judge = (agentId: string, state: WorkflowAgent["state"], start: number, end?: number): WorkflowAgent => ({ agentId, label: `judge:${agentId}`, state, attempts: 1, startedAt: new Date(start).toISOString(), ...(end !== undefined ? { endedAt: new Date(end).toISOString() } : {}) });
+  /** R1M1 and R1M2 judged (4 and 6 minutes, 7 minutes end to end), R2M1's judge 2 minutes in. */
+  const timed = (now: number) => {
+    const v = bracket();
+    v.matches[0] = { ...v.matches[0], report: { agentId: "jA" } };
+    v.matches[1] = { ...v.matches[1], report: { agentId: "jB" } };
+    const t0 = now - 20 * MIN;
+    return { v, agents: [judge("jA", "done", t0, t0 + 4 * MIN), judge("jB", "done", t0 + MIN, t0 + 7 * MIN), judge("j1", "running", now - 2 * MIN)] };
+  };
+
+  it("the arena's pace comes from its own judges: median run, span per match, contenders left; a running judge counts what it already did", () => {
+    const now = Date.parse("2026-11-26T08:00:00Z");
+    const { v, agents } = timed(now);
+    expect(arenaPace(v, agents, now)).toEqual({ decided: 2, left: 1, typicalMs: 5 * MIN, perMatchMs: 3.5 * MIN, etaMs: 2.1 * MIN });
+    expect(matchPace(v.matches[2], agents, 5 * MIN, now)).toEqual({ running: true, elapsedMs: 2 * MIN, leftMs: 3 * MIN, ratio: 0.4, doing: "Bash · npm test" });
+    expect(matchPace(v.matches[0], agents, 5 * MIN, now)).toMatchObject({ running: false, elapsedMs: 4 * MIN, ratio: 1 });
+  });
+
+  it("no judge done yet: no time is guessed; a finished arena has none left", () => {
+    const now = Date.now();
+    expect(arenaPace(bracket(), [judge("j1", "running", now - MIN)], now)).toMatchObject({ decided: 2, left: 1, typicalMs: null, etaMs: null });
+    expect(arenaPace(bracket({ phase: "done", champion: "L001" }), [], now)).toMatchObject({ left: 0 });
+  });
+
+  it("a match with a judge opens wide: facts, both progress bars, and the judge's chat live inside — no jump away from the board", () => {
+    const { v, agents } = timed(Date.now());
+    const opened: string[] = [];
+    render(<ArenaBoard view={v} agents={agents} transcript={(id) => <p>chat of {id}</p>} onAgent={(id) => opened.push(id)} />);
+    fireEvent.click(screen.getAllByText("R2M1")[0].closest("button")!);
+    const detail = screen.getByRole("complementary", { name: "Detail" });
+    expect(within(detail).getByText("chat of j1")).toBeTruthy();
+    expect(within(detail).getByRole("region", { name: "Judge · R2M1 · chat" })).toBeTruthy();
+    expect(within(detail).queryByRole("button", { name: /Judge's transcript/ })).toBeNull();
+    expect(within(detail).getByRole("progressbar", { name: "Match R2M1" })).toBeTruthy();
+    expect(within(detail).getByText(/running 2m · ca\. 3m left/)).toBeTruthy();
+    expect(within(detail).getByText(/2 of at least 3 matches decided/)).toBeTruthy();
+    expect(within(detail).getByText(/ca\. 2m to go/)).toBeTruthy();
+    expect(opened).toEqual([]);
+  });
+
+  it("without a transcript reader the flyout stays narrow and keeps the button; with no judge done it says the time is unknown", () => {
+    render(<ArenaBoard view={bracket()} agents={[]} onAgent={() => {}} />);
+    fireEvent.click(screen.getAllByText("R2M1")[0].closest("button")!);
+    const detail = screen.getByRole("complementary", { name: "Detail" });
+    expect(within(detail).getByRole("button", { name: /Judge's transcript/ })).toBeTruthy();
+    expect(within(detail).getByText("time unknown until a judge is done")).toBeTruthy();
+  });
+});
+
+describe("arena names (owner, 2026-11-26)", () => {
+  it("the header shows the run's name, the task's title under it, and once decided what was chosen; both rename in place", async () => {
+    const calls: string[] = [];
+    render(<ArenaBoard view={bracket({ name: "Signing, cheaply", nameBy: "user", champion: "L001", phase: "done", decision: "Ad-hoc signing in CI", decisionBy: "agent" })} rename={async (f, t) => void calls.push(`${f}=${t}`)} />);
+    expect(screen.getByText("Signing, cheaply")).toBeTruthy();
+    expect(screen.getByText("Sign the app")).toBeTruthy();
+    expect(screen.getByText("Ad-hoc signing in CI")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Rename arena name" }));
+    const input = screen.getByRole("textbox", { name: "arena name" });
+    fireEvent.change(input, { target: { value: "  Signing  " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(calls).toEqual(["name=Signing"]));
+    fireEvent.click(screen.getByRole("button", { name: "Rename decision" }));
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "decision" }), { key: "Escape" });
+    expect(calls).toEqual(["name=Signing"]);
+  });
+
+  it("without a rename there is no pencil; without a name the task's title stands; the tab says the name", () => {
+    render(<ArenaBoard view={bracket()} />);
+    expect(screen.queryByRole("button", { name: /Rename/ })).toBeNull();
+    expect(screen.getByText("Sign the app")).toBeTruthy();
+    expect(boardTabs(orch({ brackets: [bracket({ name: "Signing" })] })).find((t) => t.id === "arena:demo")?.label).toBe("Arena · Signing");
+  });
+});
+
 describe("CouncilBoard", () => {
   it("seats around the table, an empty chair for the absent, the decision in the middle; a seat opens its answer", () => {
     render(<CouncilBoard council={council()} />);
@@ -207,6 +283,26 @@ describe("BoardPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: /Workflows \(1\)/ }));
     fireEvent.click(screen.getByText("judge:R1M1").closest("button")!);
     expect(screen.getByText("transcript of a1")).toBeTruthy();
+  });
+
+  it("the session's title in the strip leads back to its chat (owner, 2026-11-26)", async () => {
+    let back = 0;
+    render(<BoardPage sessionKey="k" title="My session" live read={async () => orch()} onSession={() => back++} />);
+    await waitFor(() => expect(screen.getByText("Sign the app")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /My session/ }));
+    expect(back).toBe(1);
+  });
+
+  it("in an arena, a writer's transcript opens in the same flyout's dark box, not in a second column (owner, 2026-11-26)", async () => {
+    render(<BoardPage sessionKey="k" title="t" live focus="arena:demo" read={async () => orch({ brackets: [bracket({ lines: [line("L001", "pending", { writing: { agentId: "w1" } }), line("L003", "alive")] })] })} transcript={(id) => <p>transcript of {id}</p>} />);
+    await waitFor(() => expect(screen.getByText("Sign the app")).toBeTruthy());
+    fireEvent.click(within(screen.getByRole("region", { name: "The field" })).getByText("L001").closest("button")!);
+    fireEvent.click(screen.getByRole("button", { name: /Writer's transcript/ }));
+    const detail = screen.getByRole("complementary", { name: "Detail" });
+    expect(within(detail).getByText("transcript of w1")).toBeTruthy();
+    expect(screen.queryByRole("complementary", { name: "Agent transcript" })).toBeNull();
+    fireEvent.click(within(detail).getByRole("button", { name: "Close chat" }));
+    expect(within(detail).queryByText("transcript of w1")).toBeNull();
   });
 
   it("a session that orchestrates nothing says so", async () => {

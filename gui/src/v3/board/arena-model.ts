@@ -4,7 +4,7 @@
  * board renders this and nothing it would have to work out itself.
  */
 
-import { total, type BracketLine, type BracketMatch, type BracketView, type Verdict } from "./types.js";
+import { total, type BracketLine, type BracketMatch, type BracketView, type Verdict, type WorkflowAgent } from "./types.js";
 
 export type Standing = "champion" | "alive" | "fighting" | "writing" | "appealing" | "out" | "no-output" | "duplicate" | "pending";
 
@@ -142,4 +142,62 @@ export function changed(prev: ArenaModel | null, next: ArenaModel): { knockedOut
   const was = new Map(prev.rounds.flatMap((r) => r.matches.map((m) => [m.match.id, m.state] as const)));
   for (const r of next.rounds) for (const m of r.matches) if ((m.state === "decided" || m.state === "provisional") && was.get(m.match.id) !== m.state) decided.add(m.match.id);
   return { knockedOut, decided };
+}
+
+/** The judge agent of a match: the one whose report stands, else the provisional one, else the one at work. */
+export const judgeOf = (m: BracketMatch): string | undefined => m.report?.agentId ?? m.provisional?.agentId ?? m.judging?.agentId;
+
+/**
+ * How far an arena is and roughly how long it still runs (owner, 2026-11-26), read from the judges it already
+ * ran. A knockout ends when one line is left, so every remaining match takes one contender out: `left` is the
+ * contenders less one. Appeals and comebacks can add matches, so this is a floor and the time an estimate.
+ * `perMatchMs` is the arena's own pace — the span from the first judge's start to the last one's end over the
+ * judges done — so judges running side by side count as they ran. No judge done yet: no estimate. Pure.
+ */
+export interface ArenaPace {
+  decided: number;
+  /** Matches still to judge, at least. */
+  left: number;
+  /** A judge's median run, from the ones done. */
+  typicalMs: number | null;
+  perMatchMs: number | null;
+  etaMs: number | null;
+}
+
+const at = (iso?: string): number | null => (iso ? Date.parse(iso) || null : null);
+
+export function arenaPace(v: BracketView, agents: readonly WorkflowAgent[], nowMs: number): ArenaPace {
+  const byId = new Map(agents.map((a) => [a.agentId, a]));
+  const cards = v.matches.map(matchCard);
+  const decided = cards.filter((c) => c.state === "decided" || c.state === "provisional").length;
+  const contenders = v.lines.filter((l) => l.status === "alive" || l.status === "pending").length;
+  const left = v.phase === "done" || v.champion ? 0 : Math.max(0, contenders - 1);
+  const runs = v.matches
+    .map((m) => byId.get(judgeOf(m) ?? ""))
+    .filter((a): a is WorkflowAgent => !!a && a.state === "done")
+    .map((a) => ({ start: at(a.startedAt), end: at(a.endedAt) }))
+    .filter((r): r is { start: number; end: number } => r.start !== null && r.end !== null && r.end >= r.start);
+  if (!runs.length) return { decided, left, typicalMs: null, perMatchMs: null, etaMs: null };
+  const lengths = runs.map((r) => r.end - r.start).sort((a, b) => a - b);
+  const mid = lengths.length >> 1;
+  const typicalMs = lengths.length % 2 ? lengths[mid] : Math.round((lengths[mid - 1] + lengths[mid]) / 2);
+  const perMatchMs = Math.round((Math.max(...runs.map((r) => r.end)) - Math.min(...runs.map((r) => r.start))) / runs.length);
+  // Matches a provisional verdict already settled need no judge; one at work has part of its run behind it.
+  const settled = cards.filter((c) => c.state === "provisional").length;
+  const working = v.matches.map((m) => (m.judging ? byId.get(m.judging.agentId) : undefined)).filter((a): a is WorkflowAgent => !!a && a.state === "running");
+  const spent = working.reduce((s, a) => s + Math.min(typicalMs, Math.max(0, nowMs - (at(a.startedAt) ?? nowMs))), 0);
+  const etaMs = left === 0 ? 0 : Math.max(0, Math.max(0, left - settled) * perMatchMs - Math.round((spent * perMatchMs) / typicalMs));
+  return { decided, left, typicalMs, perMatchMs, etaMs };
+}
+
+/** One match's judge against the arena's typical run: how long it has run and roughly how long it still takes. Pure. */
+export function matchPace(m: BracketMatch, agents: readonly WorkflowAgent[], typicalMs: number | null, nowMs: number): { running: boolean; elapsedMs: number | null; leftMs: number | null; ratio: number | null; doing?: string } {
+  const a = agents.find((x) => x.agentId === judgeOf(m));
+  const start = at(a?.startedAt);
+  const running = a?.state === "running" || (!a && !!m.judging);
+  const end = running ? nowMs : (at(a?.endedAt) ?? null);
+  const elapsedMs = start !== null && end !== null ? Math.max(0, end - start) : null;
+  const leftMs = running && elapsedMs !== null && typicalMs ? Math.max(0, typicalMs - elapsedMs) : null;
+  const ratio = !running && (m.winner || m.provisional) ? 1 : running && elapsedMs !== null && typicalMs ? Math.min(0.95, elapsedMs / typicalMs) : null;
+  return { running, elapsedMs, leftMs, ratio, doing: m.judging?.doing ?? a?.doing };
 }

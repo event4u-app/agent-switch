@@ -271,7 +271,9 @@ export function boardChildren(r: SessionRow): ChildModel[] {
     const mine = runs.filter((w) => str(w.name).includes(run) || (brackets.length === 1 && /arena|bracket|judge|appeal/i.test(str(w.name))));
     for (const w of mine) claimed.add(str(w.runId));
     const champion = str(b.champion);
-    const label = champion ? `Arena · ${run} · ${champion} wins` : `Arena · ${run} · round ${num(b.round)} · ${num(b.alive)}/${num(b.total)} left`;
+    // Its name when it has one (owner, 2026-11-26); the run id stays the row's key.
+    const called = str(b.name) || run;
+    const label = champion ? `Arena · ${called} · ${str(b.decision) || `${champion} wins`}` : `Arena · ${called} · round ${num(b.round)} · ${num(b.alive)}/${num(b.total)} left`;
     out.push({ id: boardChildId(key, `arena:${run}`), label, kind: "arena-board", state: live && b.phase !== "done" ? "working" : "done", source: "files", ...(mine.length ? { children: mine.map(runRow) } : {}) });
   }
   for (const w of runs) if (!claimed.has(str(w.runId))) out.push(runRow(w));

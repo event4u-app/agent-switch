@@ -80,10 +80,10 @@ const agent = (agentId: string, label: string, phase: string, state: WorkflowAge
 
 const RUNS: WorkflowRun[] = [
   { runId: "wf_lines", name: "tcc-signing-arena-lines", description: "Generate 10 competing solutions", status: "completed", phases: ["Generate"], durationMs: 323_558, totalTokens: 2_170_220, resumed: false, startedAt: at(220), agents: Object.keys(ANGLES).map((id) => agent(`w-${id}`, `line:${id}`, "Generate", "done", { result: `agents/runtime/bracket/tcc-signing/lines/${id}.md: tsc passed, 23/23 tests` })) },
-  { runId: "wf_r2", name: "tcc-signing-arena-judge", description: "Judge arena matches", status: "completed", phases: ["Judge"], durationMs: 412_000, totalTokens: 1_480_000, resumed: true, startedAt: at(90), agents: ["R2M1", "R2M2", "R2M3", "R2M4"].map((id) => agent(`j-${id}`, `judge:${id}`, "Judge", "done", { result: { pick: "a" }, attempts: id === "R2M1" ? 2 : 1 })) },
+  { runId: "wf_r2", name: "tcc-signing-arena-judge", description: "Judge arena matches", status: "completed", phases: ["Judge"], durationMs: 412_000, totalTokens: 1_480_000, resumed: true, startedAt: at(90), agents: ["R2M1", "R2M2", "R2M3", "R2M4"].map((id, i) => agent(`j-${id}`, `judge:${id}`, "Judge", "done", { result: { pick: "a" }, attempts: id === "R2M1" ? 2 : 1, startedAt: at(90 - i * 7), endedAt: at(84 - i * 7) })) },
   {
     runId: "wf_r3", name: "tcc-signing-arena-judge", description: "Judge arena matches", status: "running", phases: ["Judge"], resumed: false, startedAt: at(6),
-    agents: [agent("j-R3M1", "judge:R3M1", "Judge", "done", { result: { pick: "a" } }), agent("j-R3M2", "judge:R3M2", "Judge", "running", { doing: "Bash · node --test dist-test/tests/mac-signing.test.js" })],
+    agents: [agent("j-R3M1", "judge:R3M1", "Judge", "done", { result: { pick: "a" }, startedAt: at(6), endedAt: at(1) }), agent("j-R3M2", "judge:R3M2", "Judge", "running", { startedAt: at(4), doing: "Bash · node --test dist-test/tests/mac-signing.test.js" })],
   },
 ];
 

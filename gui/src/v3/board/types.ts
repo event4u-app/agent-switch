@@ -92,6 +92,12 @@ export interface BracketView {
   run: string;
   dir: string;
   taskTitle?: string;
+  /** What a person calls the run (theirs, the agent's, the task's title, else the id). */
+  name?: string;
+  nameBy?: "user" | "agent" | "task" | "id";
+  /** Once a champion stands: what was chosen, in one line. */
+  decision?: string;
+  decisionBy?: "user" | "agent" | "line" | "id";
   tier?: string;
   seed?: number;
   round: number;

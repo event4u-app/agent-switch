@@ -9,7 +9,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { bracketRoot, bracketRuns, readBracket, readLineOutput, type BracketView } from "../bracket.js";
+import { bracketRoot, bracketRuns, readBracket, readLineOutput, setRunName, type BracketView } from "../bracket.js";
 import { councilNames, councilRoot, liveRoot, readCouncils, readLiveTables, writeInbox, type CouncilView, type InboxMessage } from "../council-runs.js";
 import { openTool, readConfined, readTail, sessionFolder } from "../lineage.js";
 import { die } from "../profiles.js";
@@ -94,6 +94,9 @@ export interface BracketSummary {
   alive: number;
   total: number;
   champion: string | null;
+  /** The run's name and, once decided, its decision (src/run-names.ts); absent in summaries written before them. */
+  name?: string;
+  decision?: string;
 }
 
 export interface BoardFields {
@@ -126,7 +129,7 @@ export function boardFields(transcript: string, live: boolean, cwd?: string): Bo
     const brackets = namedBrackets(bracketRuns(bRoot), mentions)
       .map((r) => readBracket(cwd, r))
       .filter((b): b is BracketView => b !== null)
-      .map((b) => ({ run: b.run, round: b.round, phase: b.phase, alive: b.lines.filter((l) => l.status === "alive").length, total: b.lines.length, champion: b.champion }));
+      .map((b) => ({ run: b.run, round: b.round, phase: b.phase, alive: b.lines.filter((l) => l.status === "alive").length, total: b.lines.length, champion: b.champion, ...(b.name && (b.nameBy === "user" || b.nameBy === "agent") ? { name: b.name } : {}), ...(b.decision && b.decisionBy !== "id" ? { decision: b.decision } : {}) }));
     if (brackets.length) {
       out.brackets = brackets;
       boards.push("bracket");
@@ -155,7 +158,7 @@ export function councilMessage(flags: Record<string, string | boolean>): InboxMe
 }
 
 export function cmdWorkflows(arg: string | undefined, flags: Record<string, string | boolean>): void {
-  if (!arg) die("usage: agent-switch workflows <session> [--json] [--live] [--line RUN/LINE] [--council RUN --say TEXT|--pause|--resume|--stop]");
+  if (!arg) die("usage: agent-switch workflows <session> [--json] [--live] [--line RUN/LINE] [--council RUN --say TEXT|--pause|--resume|--stop] [--arena RUN --name TEXT|--decision TEXT]");
   const t = target(arg);
   if (t.provider !== "claude" || !t.transcript) die("workflows reads Claude sessions only");
   if (typeof flags.council === "string") {
@@ -177,6 +180,22 @@ export function cmdWorkflows(arg: string | undefined, flags: Record<string, stri
       }
     }
     die(errors[errors.length - 1] ?? "no live council");
+  }
+  if (typeof flags.arena === "string") {
+    // The user names a run or its decision from the GUI; an empty text clears it.
+    const field = typeof flags.name === "string" ? "name" : typeof flags.decision === "string" ? "decision" : null;
+    if (!field) die("--arena needs --name TEXT or --decision TEXT");
+    const text = String(flags[field] ?? "");
+    const errors: string[] = [];
+    for (const cwd of sessionCwds(t)) {
+      const r = setRunName(cwd, flags.arena, field, text, "user");
+      if (r.ok) {
+        if (flags.json) console.log(JSON.stringify({ key: t.key, arena: flags.arena, [field]: text }));
+        return;
+      }
+      errors.push(r.error);
+    }
+    die(errors[errors.length - 1] ?? `no arena ${flags.arena}`);
   }
   if (typeof flags.line === "string") {
     const [run, line] = flags.line.split("/");
@@ -205,4 +224,21 @@ export function cmdWorkflows(arg: string | undefined, flags: Record<string, stri
   }
   for (const c of o.councils) console.log(`council ${c.name} · ${c.kind} · ${c.members.length} seats${c.open ? " · open" : ""}`);
   if (o.councilRunning) console.log(`council running: ${o.councilRunning.doing}`);
+}
+
+/**
+ * `agent-switch arena name|decide <run> <text> [--cwd DIR] [--force] [--json]`: the agent names the arena it
+ * runs, at its start, and the decision, once the engine reports done. An empty text clears; a name the user
+ * set stays unless --force.
+ */
+export function cmdArena(positional: string[], flags: Record<string, string | boolean>): void {
+  const [verb, run, ...words] = positional;
+  const field = verb === "name" ? "name" : verb === "decide" ? "decision" : null;
+  if (!field || !run) die("usage: agent-switch arena name|decide <run> <text> [--cwd DIR] [--force] [--json]");
+  const cwd = typeof flags.cwd === "string" ? flags.cwd : process.cwd();
+  const text = words.join(" ");
+  const r = setRunName(cwd, run, field, text, "agent", flags.force === true);
+  if (!r.ok) die(r.error);
+  if (flags.json) return void console.log(JSON.stringify({ arena: run, [field]: text }));
+  console.log(text ? `${run}: ${field} set` : `${run}: ${field} cleared`);
 }

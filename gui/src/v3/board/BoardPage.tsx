@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, Swords, Users, Workflow as WorkflowIcon, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, Swords, Users, Workflow as WorkflowIcon, X } from "lucide-react";
 
 import { cn } from "../../lib/utils.js";
 import { ago } from "../kit.js";
@@ -24,7 +24,7 @@ export type BoardTab = `arena:${string}` | `council:${string}` | "council:live" 
 /** The board's tabs, in the order they are drawn. Pure. */
 export function boardTabs(o: Orchestration): { id: BoardTab; label: string; icon: "arena" | "council" | "workflows"; live: boolean }[] {
   const tabs: { id: BoardTab; label: string; icon: "arena" | "council" | "workflows"; live: boolean }[] = [];
-  for (const b of o.brackets) tabs.push({ id: `arena:${b.run}`, label: `Arena · ${b.run}`, icon: "arena", live: b.phase !== "done" && o.live });
+  for (const b of o.brackets) tabs.push({ id: `arena:${b.run}`, label: `Arena · ${b.name ?? b.run}`, icon: "arena", live: b.phase !== "done" && o.live });
   for (const c of [...o.councils].reverse()) tabs.push({ id: `council:${c.name}`, label: `Council · ${c.name}`, icon: "council", live: (c.open || !!c.live?.listening) && o.live });
   if (o.councilRunning) tabs.unshift({ id: "council:live", label: "Council · now", icon: "council", live: true });
   if (o.workflows.length) tabs.push({ id: "workflows", label: `Workflows (${o.workflows.length})`, icon: "workflows", live: o.workflows.some((w) => w.status === "running") });
@@ -47,7 +47,7 @@ export function tabDetail(o: Orchestration, id: BoardTab): { detail?: string; at
   if (id.startsWith("arena:")) {
     const b = o.brackets.find((x) => `arena:${x.run}` === id);
     if (!b) return {};
-    const end = b.champion ? `champion ${b.champion}` : `round ${b.round}`;
+    const end = b.champion ? (b.decision ?? `champion ${b.champion}`) : `round ${b.round}`;
     return { detail: [b.taskTitle, end].filter(Boolean).join(" · "), at: time(b.updatedAt) };
   }
   if (id === "workflows") {
@@ -82,9 +82,13 @@ export interface BoardPageProps {
   transcript?: (agentId: string) => ReactNode;
   /** Speak at a live council table. */
   speak?: (key: string, run: string, msg: CouncilMessage) => Promise<void>;
+  /** Back to the session's own chat or terminal: its title in the strip. */
+  onSession?: () => void;
+  /** Name an arena run or its decision (empty clears); the board reads again after. */
+  rename?: (key: string, run: string, field: "name" | "decision", text: string) => Promise<void>;
 }
 
-export function BoardPage({ sessionKey, title, live, focus, read, readLine, transcript, speak }: BoardPageProps) {
+export function BoardPage({ sessionKey, title, live, focus, read, readLine, transcript, speak, onSession, rename }: BoardPageProps) {
   const [data, setData] = useState<Orchestration | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<BoardTab | null>(null);
@@ -136,14 +140,30 @@ export function BoardPage({ sessionKey, title, live, focus, read, readLine, tran
   let body: ReactNode;
   if (!data) body = <p className="m-auto text-[13px] text-ac-muted">{error ? `The board could not be read: ${error}` : "Reading what this session orchestrates…"}</p>;
   else if (!tabs.length) body = <p className="m-auto max-w-sm text-center text-[13px] text-ac-muted">This session runs no workflow, arena or council that Agent Switch can find.</p>;
-  else if (bracket) body = <ArenaBoard view={bracket} onAgent={transcript ? onAgent : undefined} readLine={readLine ? (line) => readLine(sessionKey, bracket.run, line) : undefined} />;
+  else if (bracket)
+    body = (
+      <ArenaBoard
+        view={bracket}
+        readLine={readLine ? (line) => readLine(sessionKey, bracket.run, line) : undefined}
+        agents={data.workflows.flatMap((w) => w.agents)}
+        transcript={transcript}
+        rename={rename ? (field, text) => rename(sessionKey, bracket.run, field, text).then(() => void read(sessionKey, liveRef.current).then(setData, () => undefined)) : undefined}
+      />
+    );
   else if (tab === "council:live" || council) body = <CouncilBoard council={council} running={tab === "council:live" ? data.councilRunning : undefined} speak={speak ? (run, msg) => speak(sessionKey, run, msg).then(() => void read(sessionKey, liveRef.current).then(setData, () => undefined)) : undefined} />;
   else body = <WorkflowBoard runs={data.workflows} onAgent={transcript ? onAgent : undefined} />;
 
   return (
     <div className="relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-ac-bg">
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-ac-line px-3" role="tablist" aria-label={`Board of ${title}`}>
-        <span className="mr-2 max-w-[220px] truncate text-[12px] text-ac-muted">{title}</span>
+        {onSession ? (
+          <button type="button" onClick={onSession} title={`Back to ${title}`} className="mr-2 inline-flex h-7 max-w-[220px] items-center gap-1 rounded-md px-2 text-[12px] text-ac-muted hover:bg-ac-raise hover:text-ac-text">
+            <ArrowLeft className="size-3.5 shrink-0" aria-hidden />
+            <span className="truncate">{title}</span>
+          </button>
+        ) : (
+          <span className="mr-2 max-w-[220px] truncate text-[12px] text-ac-muted">{title}</span>
+        )}
         {split.shown.map((t) => {
           const Icon = ICON[t.icon];
           return (

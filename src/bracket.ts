@@ -14,6 +14,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { readConfined } from "./lineage.js";
+import { META_BYTES, META_FILE, headingOf, parseRunMeta, resolveNames, setRunField, writeRunMeta, type MetaBy, type RunField } from "./run-names.js";
 import type { WorkflowRun } from "./workflows.js";
 
 const RUN_NAME = /^[A-Za-z0-9._-]{1,80}$/;
@@ -87,6 +88,12 @@ export interface BracketView {
   /** `agents/runtime/bracket/<run>`, relative to the session's cwd. */
   dir: string;
   taskTitle?: string;
+  /** What a person calls the run: theirs, the agent's, the task's title, else the run id (src/run-names.ts). */
+  name?: string;
+  nameBy?: MetaBy | "task" | "id";
+  /** Once a champion stands: what was chosen, in one line. */
+  decision?: string;
+  decisionBy?: MetaBy | "line" | "id";
   tier?: string;
   seed?: number;
   round: number;
@@ -333,7 +340,36 @@ export function readBracket(cwd: string, run: string, runs: readonly WorkflowRun
     const rationale = out ? rationaleOf(out.text) : undefined;
     if (rationale) l.rationale = rationale;
   }
+  const names = resolveNames(parseRunMeta(readIn(root, path.join(dir, META_FILE), META_BYTES)?.text), {
+    run,
+    taskTitle: view.taskTitle,
+    champion: view.champion,
+    championHeading: view.champion && LINE_ID.test(view.champion) ? headingOf(readIn(root, path.join(dir, "lines", `${view.champion}.md`), TEXT_BYTES)?.text) : undefined,
+  });
+  Object.assign(view, names);
   return overlay(view, runs);
+}
+
+/**
+ * Set or clear a run's name or decision in its `name.json`. Only an existing run (a folder with `bracket.json`)
+ * inside the bracket root; returns the error instead of throwing.
+ */
+export function setRunName(cwd: string, run: string, field: RunField, text: string, by: MetaBy, force = false): { ok: true } | { ok: false; error: string } {
+  const root = bracketRoot(cwd);
+  if (!root) return { ok: false, error: `no agents/runtime/bracket in ${cwd}` };
+  if (!RUN_NAME.test(run)) return { ok: false, error: `${run} is not a run id` };
+  const dir = path.join(root, run);
+  const state = readIn(root, path.join(dir, "bracket.json"), STATE_BYTES);
+  if (!state) return { ok: false, error: `no arena ${run} in ${cwd}` };
+  const champion = parseBracket(state.text, run)?.champion ?? null;
+  const r = setRunField(parseRunMeta(readIn(root, path.join(dir, META_FILE), META_BYTES)?.text), field, text, by, new Date().toISOString(), { force, champion });
+  if (r.error) return { ok: false, error: r.error };
+  try {
+    writeRunMeta(dir, r.meta);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 /** A line's full output file, for the detail drawer; null when the line or file is not readable. */

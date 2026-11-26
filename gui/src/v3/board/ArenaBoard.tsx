@@ -8,12 +8,13 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Crown, Eye, EyeOff, FileText, Gavel, Loader2, Swords, X } from "lucide-react";
+import { Crown, Eye, EyeOff, FileText, Gavel, Loader2, Pencil, Swords, X } from "lucide-react";
 
 import { cn } from "../../lib/utils.js";
+import { duration } from "../kit.js";
 import { Markdown } from "../markdown/Markdown.js";
-import { arenaModel, changed, matchCard, phaseLabel, type ArenaModel, type LineCard, type MatchCard, type Standing } from "./arena-model.js";
-import { RUBRIC, total, type BracketView, type Criterion, type Verdict } from "./types.js";
+import { arenaModel, arenaPace, changed, judgeOf, matchCard, matchPace, phaseLabel, type ArenaModel, type ArenaPace, type LineCard, type MatchCard, type Standing } from "./arena-model.js";
+import { RUBRIC, total, type BracketMatch, type BracketView, type Criterion, type Verdict, type WorkflowAgent } from "./types.js";
 import "./board.css";
 
 export interface ArenaBoardProps {
@@ -22,6 +23,24 @@ export interface ArenaBoardProps {
   onAgent?: (agentId: string, title: string) => void;
   /** A line's full output file, for its detail. */
   readLine?: (line: string) => Promise<string>;
+  /** The session's workflow agents: when each judge ran, for the match flyout's progress. */
+  agents?: readonly WorkflowAgent[];
+  /** One agent's transcript, live and read-only: a match's judge shows in its flyout. */
+  transcript?: (agentId: string) => ReactNode;
+  /** Name the run or its decision; empty text clears it. Absent: the names show, without a pencil. */
+  rename?: (field: "name" | "decision", text: string) => Promise<void>;
+}
+
+/** A clock that ticks while `on`, for elapsed and remaining times. */
+function useNow(on: boolean, everyMs = 1000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!on) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), everyMs);
+    return () => clearInterval(t);
+  }, [on, everyMs]);
+  return now;
 }
 
 type Selected = { kind: "line"; id: string } | { kind: "match"; id: string } | null;
@@ -40,7 +59,7 @@ const STANDING: Record<Standing, { label: string; className: string }> = {
 
 const CRITERION_LABEL: Record<Criterion, string> = { correctness: "Correctness", requirements: "Requirements", robustness: "Robustness", clarity: "Clarity", efficiency: "Efficiency" };
 
-export function ArenaBoard({ view, onAgent, readLine }: ArenaBoardProps) {
+export function ArenaBoard({ view, onAgent, readLine, agents, transcript, rename }: ArenaBoardProps) {
   const model = useMemo(() => arenaModel(view), [view]);
   const prev = useRef<ArenaModel | null>(null);
   const [fx, setFx] = useState<{ knockedOut: Set<string>; decided: Set<string> }>({ knockedOut: new Set(), decided: new Set() });
@@ -52,16 +71,27 @@ export function ArenaBoard({ view, onAgent, readLine }: ArenaBoardProps) {
     const t = setTimeout(() => setFx({ knockedOut: new Set(), decided: new Set() }), 2200);
     return () => clearTimeout(t);
   }, [model]);
+  const [selected, setSelected] = useState<Selected>(null);
+  const selectedMatch = selected?.kind === "match" ? view.matches.find((m) => m.id === selected.id) : undefined;
+  const liveJudge = selectedMatch && transcript ? judgeOf(selectedMatch) : undefined;
+  // One flyout (owner, 2026-11-26): an agent's transcript — a writer's, a judge's, an appeal's — opens in a
+  // dark box in its lower part, never as a second column beside it. A match's judge opens there by itself.
+  const [opened, setOpened] = useState<{ id: string; title: string } | null>(null);
+  useEffect(() => setOpened(null), [selected?.kind, selected?.id]);
+  const box = opened ?? (liveJudge && selectedMatch ? { id: liveJudge, title: `Judge · ${selectedMatch.id}` } : null);
+  const boxLive = !!box && (agents ?? []).some((a) => a.agentId === box.id && a.state === "running");
+  const openAgent = transcript ? (id: string, title: string) => setOpened({ id, title }) : onAgent;
+  const now = useNow(!!selectedMatch && view.phase !== "done");
+  const pace = useMemo(() => arenaPace(view, agents ?? [], now), [view, agents, now]);
   const [showOut, setShowOut] = useState(true);
   const [trace, setTrace] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Selected>(null);
   const field = showOut ? model.lines : model.lines.filter((l) => l.standing !== "out" && l.standing !== "duplicate" && l.standing !== "no-output");
   const hidden = model.lines.length - field.length;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       <div className="min-w-0 flex-1 overflow-y-auto px-5 pb-8 pt-4">
-        <Header view={view} model={model} />
+        <Header view={view} model={model} rename={rename} />
 
         <section aria-label="The field" className="mt-5">
           <div className="mb-2 flex items-center gap-2">
@@ -137,27 +167,95 @@ export function ArenaBoard({ view, onAgent, readLine }: ArenaBoardProps) {
       </div>
 
       {selected && (
-        <aside className="flex w-[400px] shrink-0 flex-col border-l border-ac-line bg-ac-panel" aria-label="Detail">
+        // A match with a judge, or any agent opened from the detail, makes the flyout wide (owner, 2026-11-26): the
+        // facts on top, how far it is, and the agent's chat live in a dark box below — without leaving the board.
+        <aside className={cn("flex shrink-0 flex-col border-l border-ac-line bg-ac-panel", box ? "w-[46%] min-w-[420px] max-w-[760px]" : "w-[400px]")} aria-label="Detail">
           <div className="flex h-9 shrink-0 items-center gap-2 border-b border-ac-line px-3">
             <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ac-text">{selected.kind === "line" ? `Line ${selected.id}` : `Match ${selected.id}`}</span>
             <button type="button" aria-label="Close" onClick={() => setSelected(null)} className="inline-flex size-6 items-center justify-center rounded-md text-ac-muted hover:bg-ac-raise hover:text-ac-text">
               <X className="size-3.5" />
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {selectedMatch && <MatchProgress match={selectedMatch} pace={pace} agents={agents ?? []} nowMs={now} />}
+          <div className={cn("overflow-y-auto p-3", box ? "max-h-[40%] shrink-0" : "min-h-0 flex-1")}>
             {selected.kind === "match" ? (
-              <MatchDetail view={view} id={selected.id} onLine={(id) => setSelected({ kind: "line", id })} onAgent={onAgent} />
+              <MatchDetail view={view} id={selected.id} onLine={(id) => setSelected({ kind: "line", id })} onAgent={liveJudge ? undefined : openAgent} />
             ) : (
-              <LineDetail view={view} model={model} id={selected.id} onMatch={(id) => setSelected({ kind: "match", id })} onAgent={onAgent} readLine={readLine} />
+              <LineDetail view={view} model={model} id={selected.id} onMatch={(id) => setSelected({ kind: "match", id })} onAgent={openAgent} readLine={readLine} />
             )}
           </div>
+          {box && transcript && (
+            <section aria-label={`${box.title} · chat`} data-agent-box="" className="mx-2 mb-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-ac-line bg-ac-bg">
+              <div className="flex h-8 shrink-0 items-center gap-1.5 border-b border-ac-line px-3 text-[11px] text-ac-muted">
+                <Gavel className="size-3.5" aria-hidden />
+                <span className="truncate font-medium text-ac-soft">{box.title}</span>
+                {boxLive && <span className="ab-pulse inline-block size-1.5 shrink-0 rounded-full bg-ac-brand" aria-label="live" />}
+                <span className="ml-auto shrink-0 font-ac-mono text-[10.5px]">{box.id}</span>
+                {opened && (
+                  <button type="button" aria-label="Close chat" onClick={() => setOpened(null)} className="inline-flex size-5 shrink-0 items-center justify-center rounded text-ac-muted hover:bg-ac-raise hover:text-ac-text">
+                    <X className="size-3" />
+                  </button>
+                )}
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col">{transcript(box.id)}</div>
+            </section>
+          )}
         </aside>
       )}
     </div>
   );
 }
 
-function Header({ view, model }: { view: BracketView; model: ArenaModel }) {
+/**
+ * A name you can change in place (owner, 2026-11-26): the text, a pencil beside it; Enter saves, Escape leaves
+ * it. Plain text only — an agent may have written it.
+ */
+function EditableText({ value, label, max, rename, className, children }: { value: string; label: string; max: number; rename?: (text: string) => Promise<void>; className?: string; children?: ReactNode }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  if (draft === null)
+    return (
+      <span className={cn("group/edit inline-flex min-w-0 max-w-full items-center gap-1", className)}>
+        <span className="truncate" title={value}>
+          {children ?? value}
+        </span>
+        {rename && (
+          <button type="button" aria-label={`Rename ${label}`} onClick={() => (setDraft(value), setError(null))} className="inline-flex size-5 shrink-0 items-center justify-center rounded text-ac-muted opacity-0 hover:bg-ac-raise hover:text-ac-text focus-visible:opacity-100 group-hover/edit:opacity-100">
+            <Pencil className="size-3" />
+          </button>
+        )}
+      </span>
+    );
+  const save = () => {
+    if (!rename) return;
+    rename(draft.trim()).then(
+      () => setDraft(null),
+      (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+    );
+  };
+  return (
+    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <input
+        aria-label={label}
+        autoFocus
+        value={draft}
+        maxLength={max}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") save();
+          if (e.key === "Escape") setDraft(null);
+        }}
+        onBlur={() => setDraft(null)}
+        placeholder="Empty: back to the task's title"
+        className="h-7 w-full min-w-0 rounded-md border border-ac-line2 bg-ac-bg px-2 text-[13px] text-ac-text outline-none focus:border-ac-brand"
+      />
+      {error && <span className="text-[11px] text-ac-alert-text">{error}</span>}
+    </span>
+  );
+}
+
+function Header({ view, model, rename }: { view: BracketView; model: ArenaModel; rename?: ArenaBoardProps["rename"] }) {
+  const name = view.name ?? view.taskTitle ?? view.run;
   return (
     <header className={cn("relative overflow-hidden rounded-[10px] border border-ac-line bg-ac-panel px-4 py-3", view.phase === "done" && view.champion && "ab-champion")}>
       <div className="flex items-start gap-3">
@@ -165,7 +263,17 @@ function Header({ view, model }: { view: BracketView; model: ArenaModel }) {
           {view.phase === "done" ? <Crown className="size-4" /> : <Swords className="size-4" />}
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[14px] font-semibold text-ac-text">{view.taskTitle ?? view.run}</h2>
+          <h2 className="flex min-w-0 text-[14px] font-semibold text-ac-text">
+            <EditableText value={name} label="arena name" max={120} rename={rename && ((t) => rename("name", t))} />
+          </h2>
+          {view.taskTitle && view.taskTitle !== name && <p className="truncate text-[11.5px] text-ac-muted" title={view.taskTitle}>{view.taskTitle}</p>}
+          {view.champion && view.decision && (
+            <p className="mt-1 flex min-w-0 items-center gap-1.5 text-[12px] text-ac-soft">
+              <span className="shrink-0 font-medium text-ac-warn-text">Decided:</span>
+              <EditableText value={view.decision} label="decision" max={160} rename={rename && ((t) => rename("decision", t))} />
+              <span className="shrink-0 rounded-full bg-ac-warn-tint px-1.5 font-ac-mono text-[10.5px] text-ac-warn-text">{view.champion}</span>
+            </p>
+          )}
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11.5px] text-ac-soft">
             <span className="rounded-full bg-ac-raise px-2 py-0.5 font-ac-mono">{view.run}</span>
             {view.tier && <span className="rounded-full bg-ac-raise px-2 py-0.5">tier {view.tier}</span>}
@@ -557,6 +665,66 @@ function LineDetail({ view, model, id, onMatch, onAgent, readLine }: { view: Bra
       {output?.loading && <p className="text-[12px] text-ac-muted">Reading {view.dir}/lines/{line.id}.md…</p>}
       {output?.error && <p className="text-[12px] text-ac-alert-text">{output.error}</p>}
       {output?.text && <Markdown source={output.text} className="text-[12px]" />}
+    </div>
+  );
+}
+
+/** A thin progress bar; `null` draws an indeterminate one (running, no pace known yet). */
+function Bar({ ratio, tone, label }: { ratio: number | null; tone: "brand" | "ok" | "muted"; label: string }) {
+  return (
+    <span role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={ratio === null ? undefined : Math.round(ratio * 100)} className="relative block h-1.5 w-full overflow-hidden rounded-full bg-ac-raise">
+      {ratio === null ? (
+        <span className="ab-pulse absolute inset-y-0 left-0 w-1/3 rounded-full bg-ac-brand opacity-60" />
+      ) : (
+        <span className={cn("absolute inset-y-0 left-0 rounded-full transition-[width] duration-700", tone === "ok" ? "bg-ac-ok" : tone === "brand" ? "bg-ac-brand" : "bg-ac-muted")} style={{ width: `${Math.max(2, ratio * 100)}%` }} />
+      )}
+    </span>
+  );
+}
+
+/**
+ * How far the open match and the whole arena are (owner, 2026-11-26): the match's judge against the arena's typical
+ * judge run, and the matches decided against the ones still to come, with a rough end time. Before any judge is
+ * done there is no pace to go by, so no time is guessed.
+ */
+function MatchProgress({ match, pace, agents, nowMs }: { match: BracketMatch; pace: ArenaPace; agents: readonly WorkflowAgent[]; nowMs: number }) {
+  const card = matchCard(match);
+  const mp = matchPace(match, agents, pace.typicalMs, nowMs);
+  const total = pace.decided + pace.left;
+  const arenaRatio = total ? pace.decided / total : 1;
+  const matchLine =
+    card.state === "bye"
+      ? "Bye — no judge needed"
+      : card.state === "waiting"
+        ? "Waiting for a judge"
+        : mp.running
+          ? [mp.elapsedMs !== null && `running ${duration(mp.elapsedMs)}`, mp.leftMs !== null ? (mp.leftMs > 0 ? `ca. ${duration(mp.leftMs)} left` : "taking longer than usual") : pace.typicalMs === null && "no judge done yet to go by"].filter(Boolean).join(" · ")
+          : [card.provisional ? "Verdict in, not recorded yet" : "Decided", mp.elapsedMs !== null && `judged in ${duration(mp.elapsedMs)}`].filter(Boolean).join(" · ");
+  return (
+    <div data-match-progress="" className="flex shrink-0 flex-col gap-2.5 border-b border-ac-line px-3 py-2.5">
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 text-[11px]">
+          <span className="font-medium text-ac-soft">This match</span>
+          <span className="ml-auto truncate text-ac-muted">{matchLine}</span>
+        </div>
+        <Bar label={`Match ${match.id}`} ratio={card.state === "bye" || card.state === "waiting" ? 0 : mp.ratio} tone={mp.running ? "brand" : "ok"} />
+        {mp.running && mp.doing && (
+          <span className="truncate font-ac-mono text-[10.5px] text-ac-soft" title={`Now: ${mp.doing}`}>
+            {mp.doing}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 text-[11px]">
+          <span className="font-medium text-ac-soft">Arena</span>
+          <span className="text-ac-muted">
+            {pace.decided} of {pace.left ? "at least " : ""}
+            {total} matches decided
+          </span>
+          <span className="ml-auto text-ac-muted">{pace.left === 0 ? "done" : pace.etaMs !== null ? `ca. ${duration(pace.etaMs)} to go` : "time unknown until a judge is done"}</span>
+        </div>
+        <Bar label="Arena progress" ratio={arenaRatio} tone={pace.left === 0 ? "ok" : "brand"} />
+      </div>
     </div>
   );
 }
