@@ -846,7 +846,6 @@ export function V3Window({
           ) : (
             bodyOf(activeSession)
           )}
-          {bar.place && <StatusBar place={bar.place} />}
         </>
       ) : data.sessions.length === 0 && data.loading ? (
         // First read still running: an empty list is not "no sessions" yet.
@@ -921,7 +920,7 @@ export function V3Window({
   const systemAsks = foundNeeds.filter((n) => !needSession(n)).length;
   const sessionAsks = foundNeeds.length - systemAsks + waiting.filter((x) => !foundNeeds.some((n) => needSession(n) === x.key)).length;
   const sessionsWindow = (
-    <aside aria-label="Sessions window" data-loaded={data.loading ? "false" : "true"} aria-busy={data.loading || undefined} className="flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-ac-line bg-ac-panel">
+    <aside aria-label="Sessions window" data-loaded={data.loading ? "false" : "true"} aria-busy={data.loading || undefined} className="flex w-[300px] shrink-0 flex-col overflow-hidden bg-ac-panel">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-ac-line px-3">
         <span className="text-[12px] font-semibold text-ac-text">Sessions</span>
         <span className="ml-auto flex items-center">
@@ -1210,6 +1209,7 @@ export function V3Window({
       running={runningCounts(runs)}
       activePage={active?.startsWith("page:") ? active.slice(5) : null}
       onPageMenu={(id, at) => setOverlay({ pageMenu: id, ...shellPoint(at) })}
+      status={activeSession && bar?.place ? <StatusBar place={bar.place} /> : null}
       needsYou={needs.length > 0}
       blocker={!!next}
       rightWhy={activeSession ? null : "no session in this tab"}
