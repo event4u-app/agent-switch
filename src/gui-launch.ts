@@ -26,6 +26,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { defaultSignEnv, stabilizeSignature } from "./mac-signing.js";
+
 /** The repo whose GitHub Releases carry the GUI artifacts. */
 const UPDATE_REPO = "event4u-app/agent-switch";
 const CACHE_ROOT = path.join(os.homedir(), ".agent-switch", "gui");
@@ -113,6 +115,15 @@ function processListSnapshot(platform: string = process.platform): string {
   } catch {
     return ""; // ps/tasklist unavailable → treat as "not detectably running"
   }
+}
+
+/** Give a macOS bundle its stable local signature, at most once per run (a failure warns once).
+ *  No-op elsewhere; never throws, so the launch always goes on. */
+const signTried = new Set<string>();
+function stabilizeBundle(app: string): void {
+  if (signTried.has(app)) return;
+  signTried.add(app);
+  stabilizeSignature(app, defaultSignEnv(() => processListSnapshot()));
 }
 
 /** Whether the desktop GUI is already running on this host. Used to enforce
@@ -270,6 +281,8 @@ async function downloadArtifact(kind: GuiKind, asset: Asset, dir: string, launch
     const appDir = fs.readdirSync(dir).find((n) => n.endsWith(".app"));
     if (!appDir) throw new Error("extracted archive contained no .app bundle");
     if (appDir !== launchName) fs.renameSync(path.join(dir, appDir), launchPath);
+    // Before the first launch, while nothing runs from this fresh folder.
+    stabilizeBundle(launchPath);
     return launchPath;
   }
 
@@ -314,6 +327,8 @@ export async function launchGui(): Promise<"launched" | "already-running"> {
   }
   if (isGuiRunning()) return "already-running";
   const target = await ensureGuiArtifact(spec);
+  // A cached bundle from before signing existed gets it once; a running one is left alone.
+  if (spec.kind === "app") stabilizeBundle(target);
   const { program, args } = guiLaunchArgv(spec.kind, target);
   const child = spawn(program, args, { detached: true, stdio: "ignore" });
   child.unref();

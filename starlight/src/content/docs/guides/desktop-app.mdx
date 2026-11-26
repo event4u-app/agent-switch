@@ -35,6 +35,12 @@ your platform from the project's GitHub release, keeps it under
   already has the app, so `agent-switch` keeps working right after a release.
 - With no network, it starts the newest copy it already downloaded.
 - If the app is already running, a second one is not started.
+- On macOS, each downloaded app is signed again on your Mac with a local
+  signing identity that Agent Switch creates the first time it runs, in its own
+  keychain `~/.agent-switch/signing/`, which it adds to your keychain list.
+  Every version then carries the same signature, so access you grant once,
+  such as to your Documents folder, stays granted after updates. If signing
+  fails, the app starts anyway and a line in the terminal names the cause.
 
 Other platforms (for example Linux on ARM) have no prebuilt app; the CLI works
 there as usual.
