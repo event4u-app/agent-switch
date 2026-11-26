@@ -44,6 +44,8 @@ describe("Accounts page › copy e-mail", () => {
 
   it("a refused clipboard is caught, never an unhandled rejection", async () => {
     const unhandled = vi.fn();
+    // The GUI tsconfig carries no Node types; vitest still runs under Node.
+    const process = (globalThis as unknown as { process: { on(e: string, f: () => void): void; off(e: string, f: () => void): void } }).process;
     process.on("unhandledRejection", unhandled);
     clip(() => Promise.reject(new Error("Write permission denied.")));
     page();
