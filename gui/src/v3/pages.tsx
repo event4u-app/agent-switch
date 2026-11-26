@@ -5,7 +5,8 @@
  */
 
 import { useMemo, useState, type ReactNode } from "react";
-import { Archive, ArchiveRestore, CircleAlert, Clock, Copy, Ellipsis, GitBranch, LogIn, Pin, Play, Plus, RefreshCw, Search, Shield, SquareTerminal, Tag, Vault } from "lucide-react";
+import { Archive, ArchiveRestore, CircleAlert, Clock, Ellipsis, GitBranch, LogIn, Pin, Play, Plus, RefreshCw, Search, Shield, SquareTerminal, Tag, Vault } from "lucide-react";
+import { CopyButton } from "../ui/CopyButton.js";
 import { cn } from "../lib/utils.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
@@ -102,11 +103,7 @@ function AccountRowFull({ a, i, nowMs, on }: { a: PageAccount; i: number; nowMs:
         {(a.email || a.label) && (
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-[11px] text-[11.5px] text-ac-muted">
             {a.email && <span className="truncate">{a.email}</span>}
-            {a.email && (
-              <button type="button" title="Copy e-mail" aria-label={`Copy ${a.email}`} onClick={() => void navigator.clipboard?.writeText(a.email!)} className="shrink-0 text-ac-faint hover:text-ac-text">
-                <Copy className="size-3" />
-              </button>
-            )}
+            {a.email && <CopyButton text={a.email} />}
             {a.label && <span className="shrink-0">{a.email ? `· ${a.label}` : a.label}</span>}
           </div>
         )}

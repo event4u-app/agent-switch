@@ -29,6 +29,31 @@ describe("Accounts page (spec §10.1)", () => {
   });
 });
 
+describe("Accounts page › copy e-mail", () => {
+  const page = () => render(<AccountsPage nowMs={NOW} nextRefreshMs={null} view="accounts" onView={vi.fn()} history={null} pools={null} poolCount={0} on={actions()} accounts={[acct({})]} />);
+  const clip = (writeText: (t: string) => Promise<void>) => Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+
+  it("copies the address and says so", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    clip(writeText);
+    page();
+    fireEvent.click(screen.getByRole("button", { name: "Copy me@example.com" }));
+    expect(writeText).toHaveBeenCalledWith("me@example.com");
+    expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
+  });
+
+  it("a refused clipboard is caught, never an unhandled rejection", async () => {
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    clip(() => Promise.reject(new Error("Write permission denied.")));
+    page();
+    fireEvent.click(screen.getByRole("button", { name: "Copy me@example.com" }));
+    await new Promise((r) => setTimeout(r, 20));
+    process.off("unhandledRejection", unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+});
+
 describe("Accounts page › routines", () => {
   const page = (a: PageAccount) => render(<AccountsPage nowMs={NOW} nextRefreshMs={null} view="accounts" onView={vi.fn()} history={null} pools={null} poolCount={0} on={actions()} accounts={[a]} />);
 

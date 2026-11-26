@@ -10,7 +10,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Segmented } from "../ui/Segmented.js";
 import { cn } from "../lib/utils.js";
 import type { IdentityColor } from "../vm/types.js";
-import { AppWindow, Copy } from "lucide-react";
+import { AppWindow } from "lucide-react";
+import { CopyButton } from "../ui/CopyButton.js";
 import { AccountMark, Chip, Marker, checkedAgo, duration, pct } from "./kit.js";
 
 export interface LimitWindow {
@@ -346,9 +347,7 @@ export function TrayAccount({ a, nowMs, onOpen, onSignIn, app }: { a: LimitAccou
           )}
         </button>
         {a.identity && (
-          <button type="button" onClick={() => void navigator.clipboard?.writeText(a.identity!)} aria-label="Copy email" title="Copy email" className="-ml-1 inline-flex size-5 shrink-0 items-center justify-center rounded text-ac-faint opacity-0 hover:text-ac-text focus-visible:opacity-100 group-hover:opacity-100">
-            <Copy className="size-3" />
-          </button>
+          <CopyButton text={a.identity} label="Copy email" className="-ml-1 opacity-0 focus-visible:opacity-100 group-hover:opacity-100" />
         )}
         {a.next && <span className="shrink-0 text-[10.5px] text-ac-info-text">→ next</span>}
         {(t === "warn" || t === "alert") && (
