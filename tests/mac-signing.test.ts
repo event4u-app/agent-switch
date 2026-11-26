@@ -144,12 +144,15 @@ function setup(opts: { platform?: string; list?: string[] } = {}) {
   return { root, mac, env, warns, logs, app, p, recorded };
 }
 
+// The module only runs on darwin; these assert POSIX paths and file modes a Windows runner cannot have.
+const posixOnly = { skip: process.platform === "win32" ? "macOS-only paths and file modes" : false };
+
 const leakFree = (s: { warns: string[]; logs: unknown[] }) => {
   const text = JSON.stringify(s.warns) + JSON.stringify(s.logs);
   assert.ok(!/secret-pw-/.test(text), "the keychain password never reaches stderr or the log");
 };
 
-test("first run: creates keychain, 0600 password, records the leaf and signs the bundle", () => {
+test("first run: creates keychain, 0600 password, records the leaf and signs the bundle", posixOnly, () => {
   const s = setup();
   assert.equal(stabilizeSignature(s.app, s.env), "signed");
   assert.ok(fs.existsSync(s.p.keychain));
@@ -312,7 +315,7 @@ test("non-darwin: nothing runs", () => {
   }
 });
 
-test("a running bundle is never re-signed", () => {
+test("a running bundle is never re-signed", posixOnly, () => {
   const s = setup();
   s.mac.st.running = `/sbin/launchd\n${s.app}/Contents/MacOS/agent-switch\n`;
   assert.equal(stabilizeSignature(s.app, s.env), "running");
@@ -323,7 +326,7 @@ test("a running bundle is never re-signed", () => {
   assert.equal(stabilizeSignature(s.app, s.env), "signed");
 });
 
-test("dev build: a bare binary gets the fixed identifier, is kept when unchanged, and is left alone while it runs", () => {
+test("dev build: a bare binary gets the fixed identifier, is kept when unchanged, and is left alone while it runs", posixOnly, () => {
   const s = setup();
   const bin = path.join(s.root, "gui", "src-tauri", "target", "debug", "agent-switch-gui");
   assert.equal(stabilizeSignature(bin, s.env, "com.event4u.agent-switch.dev"), "signed");
@@ -337,7 +340,7 @@ test("dev build: a bare binary gets the fixed identifier, is kept when unchanged
   assert.deepEqual(s.warns, []);
 });
 
-test("parsers", () => {
+test("parsers", posixOnly, () => {
   assert.deepEqual(
     parseIdentities(`  1) ${"A".repeat(40)} "${IDENTITY_CN}" (CSSMERR_TP_NOT_TRUSTED)\n  1) ${"a".repeat(40)} "${IDENTITY_CN}"\n     2 identities found`),
     [{ sha1: "A".repeat(40), name: IDENTITY_CN }],
