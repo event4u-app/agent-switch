@@ -56,12 +56,33 @@ export function VirtualList<T>({ items, keyOf, render, estimate = 64, className,
   const [scroll, setScroll] = useState({ top: 0, height: 800 });
   const [, bump] = useState(0);
   const atBottom = useRef(true);
-  const measure = useCallback((key: string, h: number) => {
-    if (h && heights.current.get(key) !== h) {
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const keyRef = useRef(keyOf);
+  keyRef.current = keyOf;
+  // A row above the viewport that turns out taller or shorter than estimated would push what the user reads
+  // up or down (rows are positioned absolutely, so the browser's own scroll anchoring cannot help). Its change
+  // is carried here and taken out of the scroll position once the list has re-rendered with it.
+  const shift = useRef(0);
+  const measure = useCallback(
+    (key: string, h: number) => {
+      const old = heights.current.get(key);
+      if (!h || old === h) return;
+      const el = ref.current;
+      if (el && !atBottom.current) {
+        let top = 0;
+        for (const t of itemsRef.current) {
+          const k = keyRef.current(t);
+          if (k === key) break;
+          top += heights.current.get(k) ?? estimate;
+        }
+        if (top + (old ?? estimate) <= el.scrollTop + shift.current) shift.current += h - (old ?? estimate);
+      }
       heights.current.set(key, h);
       bump((x) => x + 1);
-    }
-  }, []);
+    },
+    [estimate],
+  );
   const hs = items.map((t) => heights.current.get(keyOf(t)));
   const r = visibleRange(items.length, hs, estimate, scroll.top, scroll.height);
   // Rows put in front (earlier turns loaded) must not move what the user is reading:
@@ -81,14 +102,21 @@ export function VirtualList<T>({ items, keyOf, render, estimate = 64, className,
       anchor.current = { key: prev, offset: atBottom.current ? -Math.round((el.clientHeight * 2) / 3) : el.scrollTop };
       atBottom.current = false;
     }
-    if (atBottom.current) el.scrollTop = el.scrollHeight;
-    else if (anchor.current) {
+    if (atBottom.current) {
+      shift.current = 0;
+      el.scrollTop = el.scrollHeight;
+    } else if (shift.current && !anchor.current) {
+      el.scrollTop += shift.current;
+      shift.current = 0;
+    } else if (anchor.current) {
       const i = items.findIndex((t) => keyOf(t) === anchor.current!.key);
       if (i < 0) anchor.current = null;
       else el.scrollTop = hs.slice(0, i).reduce<number>((n, h) => n + (h ?? estimate), 0) + anchor.current.offset;
     }
   });
   const release = () => (anchor.current = null);
+  const frame = useRef<number | null>(null);
+  useLayoutEffect(() => () => void (frame.current !== null && cancelAnimationFrame(frame.current)), []);
   return (
     <div
       ref={ref}
@@ -103,7 +131,12 @@ export function VirtualList<T>({ items, keyOf, render, estimate = 64, className,
       onScroll={(e) => {
         const el = e.currentTarget;
         atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-        setScroll({ top: el.scrollTop, height: el.clientHeight });
+        // One re-render per frame, not per scroll event: a wheel sends many, and each would redraw every row.
+        if (frame.current !== null) return;
+        frame.current = requestAnimationFrame(() => {
+          frame.current = null;
+          setScroll({ top: el.scrollTop, height: el.clientHeight });
+        });
       }}
     >
       <div style={{ height: r.total, position: "relative" }}>
