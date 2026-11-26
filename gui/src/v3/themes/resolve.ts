@@ -175,5 +175,11 @@ export function xtermTheme(def: ThemeDef) {
     black, red, green, yellow, blue, magenta, cyan, white,
     brightBlack: bBlack, brightRed: bRed, brightGreen: bGreen, brightYellow: bYellow,
     brightBlue: bBlue, brightMagenta: bMagenta, brightCyan: bCyan, brightWhite: bWhite,
+    // The scrollbar slider as the window's own scrollbars: the text colour, faint.
+    scrollbarSliderBackground: alpha(def.terminal.fg, 0.25),
+    scrollbarSliderHoverBackground: alpha(def.terminal.fg, 0.45),
+    scrollbarSliderActiveBackground: alpha(def.terminal.fg, 0.55),
+    // The ruler width only sizes the scrollbar; no ruler line beside it.
+    overviewRulerBorder: "transparent",
   };
 }
