@@ -723,6 +723,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
         tool: r.provider,
         contextTokens: r.context?.contextTokens ?? null,
         cache: r.cache ?? null,
+        place: { cwd: r.cwd ?? null, project: projectOf(r), projectRoot: rootOf(r), branch: r.git?.branch ?? null, worktree: !!r.git?.worktree, changed: env.changes.has(key) ? env.changes.get(key)!.length + (env.changesMore?.get(key) ?? 0) : (r.git?.changed ?? null), ahead: r.git?.ahead ?? undefined, behind: r.git?.behind ?? undefined },
       };
     },
     models: (key): ModelChoices | null => {
