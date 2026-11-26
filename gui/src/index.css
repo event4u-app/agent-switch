@@ -284,9 +284,44 @@ body {
   text-transform: uppercase;
   color: var(--ac-muted);
 }
-.as-ac * {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--ac-muted) 45%, transparent) transparent;
+/* Scrollbars inside the v3 window (owner, 2026-11-26: too wide): a slim thumb on no track. Chromium and
+ * WebKit take the ::-webkit-scrollbar rules — setting scrollbar-width there would override them with the
+ * wider standard bar — so the standard properties only reach engines without them (Firefox). */
+.as-ac ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+}
+.as-ac ::-webkit-scrollbar-track,
+.as-ac ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.as-ac ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ac-muted) 40%, transparent);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 8px;
+}
+.as-ac ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ac-muted) 70%, transparent);
+  background-clip: padding-box;
+}
+/* The overview ruler only sizes the terminal's scrollbar (no decorations are drawn); its line stays hidden. */
+.as-ac .xterm .xterm-decoration-overview-ruler {
+  display: none;
+}
+/* The terminal's own scrollbar (xterm 6, 10px wide): the same slim, rounded slider. */
+.as-ac .xterm .xterm-scrollable-element > .scrollbar > .slider {
+  box-sizing: border-box;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+}
+@supports not selector(::-webkit-scrollbar) {
+  .as-ac * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--ac-muted) 45%, transparent) transparent;
+  }
 }
 
 @keyframes ac-pulse {

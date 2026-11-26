@@ -92,7 +92,10 @@ export function XtermBox({
       cursorBlink: true,
       // The CLI's ╭─╮ boxes as xterm's own rounded glyphs (spec §6.4).
       customGlyphs: true,
-      theme: look?.theme ?? { background: cssVar("--ac-bg", "#0b0b10"), foreground: cssVar("--ac-soft", "#e5e5ea") },
+      // xterm 6 draws its own scrollbar, 14px wide by default; the ruler width sets it (owner, 2026-11-26: too wide).
+      // The slider itself is slimmed to the window's scrollbars in index.css.
+      overviewRuler: { width: 10 },
+      theme: look?.theme ?? { background: cssVar("--ac-bg", "#0b0b10"), foreground: cssVar("--ac-soft", "#e5e5ea"), overviewRulerBorder: "transparent" },
     });
     termRef.current = term;
     const fit = new FitAddon();

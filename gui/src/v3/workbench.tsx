@@ -270,7 +270,6 @@ export interface BarSession {
   place?: SessionPlace | null;
 }
 
-
 export interface SessionPlace {
   /** The folder the agent runs in. */
   cwd: string | null;
