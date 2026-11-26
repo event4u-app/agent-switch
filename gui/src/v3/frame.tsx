@@ -55,7 +55,7 @@ export function TitleBar({
   onSettingsMenu?: (at: { x: number; y: number }) => void;
 }) {
   return (
-    <header data-tauri-drag-region className="relative flex h-11 shrink-0 items-center gap-2 border-b border-ac-line bg-ac-rail pl-[84px] pr-3">
+    <header data-tauri-drag-region className="relative flex h-11 shrink-0 items-center gap-2 bg-ac-frame pl-[84px] pr-3">
       <AppLogo className="pointer-events-none size-6" />
       <span className="pointer-events-none mr-2 text-[13px] font-semibold text-ac-text">Agent Switch</span>
       <div data-tauri-drag-region className="flex flex-1 justify-center self-stretch items-center">
@@ -173,7 +173,8 @@ export function Stripe({
   return (
     <nav
       aria-label={side === "left" ? "Tool windows" : "Session panels"}
-      className={cn("flex w-11 shrink-0 flex-col items-center gap-1 bg-ac-rail py-2", side === "left" ? "border-r border-ac-line" : "border-l border-ac-line")}
+      // No line of its own: the stripe is part of the frame the islands sit on (owner, 2026-11-26).
+      className="flex w-11 shrink-0 flex-col items-center gap-1 bg-ac-frame py-2"
     >
       {items.filter((it) => !it.bottom).map(button)}
       {items.some((it) => it.bottom) && <div className="mt-auto flex flex-col items-center gap-1">{items.filter((it) => it.bottom).map(button)}</div>}
@@ -229,6 +230,11 @@ export function useFrame(onPage: (p: PageId, newTab?: boolean) => void) {
   return { sessionsShown, right, selectLeft, selectRight, setSessionsShown, setRight };
 }
 
+/** One island: rounded, its own edge, the frame showing around it. */
+export function Island({ grow, children }: { grow?: boolean; children: ReactNode }) {
+  return <div data-island="" className={cn("flex min-h-0 overflow-hidden rounded-[10px]", grow ? "min-w-0 flex-1" : "shrink-0")}>{children}</div>;
+}
+
 export function Shell({
   frame,
   health,
@@ -246,6 +252,7 @@ export function Shell({
   running,
   activePage,
   onPageMenu,
+  status,
 }: {
   frame: ReturnType<typeof useFrame>;
   health: "ready" | "down";
@@ -269,17 +276,27 @@ export function Shell({
   activePage?: string | null;
   /** Right click on a left-stripe page button (or on Settings): Open, Open in new tab. */
   onPageMenu?: (id: string, at: { x: number; y: number }) => void;
+  /** The open session's status bar, on the frame under the islands; absent: none (a page is in front). */
+  status?: ReactNode;
 }) {
   return (
-    <div data-v3-shell className="relative flex h-full min-h-0 flex-col bg-ac-bg">
+    // Islands (owner, 2026-11-26, as in PhpStorm): the title bar and both stripes are one frame; the
+    // Sessions window, the editor area and the right window sit on it as rounded islands with a gap
+    // between them, for softer edges than lines that run through the window.
+    <div data-v3-shell className="relative flex h-full min-h-0 flex-col bg-ac-frame">
       <TitleBar health={health} inbox={frame.sessionsShown ? null : inbox} inboxOpen={inboxOpen} notifications={inbox.count} historyOpen={historyOpen} onSettingsMenu={onPageMenu && ((at) => onPageMenu("settings", at))} {...actions} />
-      <div className="flex min-h-0 flex-1">
+      <div className={cn("flex min-h-0 flex-1", !status && "pb-1.5")}>
         <Stripe side="left" items={leftItems(!frame.sessionsShown && needsYou, running)} active={[...(frame.sessionsShown ? ["sessions"] : []), ...(activePage && ["arenas", "councils", "panels"].includes(activePage) ? [activePage] : [])]} onSelect={frame.selectLeft} onMenu={onPageMenu} />
-        {frame.sessionsShown && sessionsWindow}
-        {centre}
-        {frame.right && !rightWhy && rightWindow}
+        {/* The gap runs between the islands only: the stripes keep their icons as close to them as before. */}
+        <div className="flex min-h-0 min-w-0 flex-1 gap-1.5">
+          {frame.sessionsShown && <Island>{sessionsWindow}</Island>}
+          <Island grow>{centre}</Island>
+          {frame.right && !rightWhy && rightWindow && <Island>{rightWindow}</Island>}
+        </div>
         <Stripe side="right" items={rightItems(blocker && frame.right !== "summary")} active={frame.right} why={rightWhy} onSelect={frame.selectRight} />
       </div>
+      {/* The status bar sits on the frame under the islands, as PhpStorm's breadcrumb line. */}
+      {status}
       {overlay}
     </div>
   );

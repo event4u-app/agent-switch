@@ -34,7 +34,7 @@ import { SubagentView } from "./subagent-view.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
 import { allNeeds } from "./tools.js";
-import { AFTER_TURN_DOWN_WHY, BlockerStrip, HintStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, HOSTED_HINT, type BarChipId, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
+import { AFTER_TURN_DOWN_WHY, BlockerStrip, HintStrip, ModelPopover, SessionBar, StatusBar, SystemBanner, TabStrip, engineDownText, HOSTED_HINT, type BarChipId, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
 import { AccountMark, Act, inShell, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
@@ -920,7 +920,7 @@ export function V3Window({
   const systemAsks = foundNeeds.filter((n) => !needSession(n)).length;
   const sessionAsks = foundNeeds.length - systemAsks + waiting.filter((x) => !foundNeeds.some((n) => needSession(n) === x.key)).length;
   const sessionsWindow = (
-    <aside aria-label="Sessions window" data-loaded={data.loading ? "false" : "true"} aria-busy={data.loading || undefined} className="flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-ac-line bg-ac-panel">
+    <aside aria-label="Sessions window" data-loaded={data.loading ? "false" : "true"} aria-busy={data.loading || undefined} className="flex w-[300px] shrink-0 flex-col overflow-hidden bg-ac-panel">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-ac-line px-3">
         <span className="text-[12px] font-semibold text-ac-text">Sessions</span>
         <span className="ml-auto flex items-center">
@@ -1209,6 +1209,7 @@ export function V3Window({
       running={runningCounts(runs)}
       activePage={active?.startsWith("page:") ? active.slice(5) : null}
       onPageMenu={(id, at) => setOverlay({ pageMenu: id, ...shellPoint(at) })}
+      status={activeSession && bar?.place ? <StatusBar place={bar.place} /> : null}
       needsYou={needs.length > 0}
       blocker={!!next}
       rightWhy={activeSession ? null : "no session in this tab"}

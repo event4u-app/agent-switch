@@ -1,4 +1,4 @@
-import { alpha, contrast, ensureContrast, mix } from "./color.js";
+import { alpha, contrast, ensureContrast, luminance, mix } from "./color.js";
 import { DEFAULT_DARK, DEFAULT_LIGHT, themeById, type ThemeDef } from "./registry.js";
 
 /** Contrast floors every resolved theme meets: AA for body text (4.5), a
@@ -93,10 +93,14 @@ export function resolveTheme(def: ThemeDef, accent: Accent = "theme"): Resolved 
   const textOf = (name: string, c: string) => floor(`--ac-${name}-text`, c, [p.panel, p.bg, raise], FLOOR.body);
   const tint = dark ? 0.16 : 0.12;
 
+  const byLum = [p.bg, p.panel, p.rail].sort((x, y) => luminance(x) - luminance(y));
   const vars: Record<string, string> = {
     "--ac-bg": p.bg,
     "--ac-panel": p.panel,
     "--ac-rail": p.rail,
+    // The frame the islands sit on (owner, 2026-11-26, as PhpStorm's islands): in a dark theme a step lighter
+    // than the lightest surface, so the gaps between the islands read as soft lines; in a light one a step darker.
+    "--ac-frame": dark ? mix(byLum[2], text, 0.09) : mix(byLum[0], "#000000", 0.05),
     "--ac-raise": raise,
     "--ac-line": p.line,
     "--ac-line2": line2,
@@ -171,5 +175,11 @@ export function xtermTheme(def: ThemeDef) {
     black, red, green, yellow, blue, magenta, cyan, white,
     brightBlack: bBlack, brightRed: bRed, brightGreen: bGreen, brightYellow: bYellow,
     brightBlue: bBlue, brightMagenta: bMagenta, brightCyan: bCyan, brightWhite: bWhite,
+    // The scrollbar slider as the window's own scrollbars: the text colour, faint.
+    scrollbarSliderBackground: alpha(def.terminal.fg, 0.25),
+    scrollbarSliderHoverBackground: alpha(def.terminal.fg, 0.45),
+    scrollbarSliderActiveBackground: alpha(def.terminal.fg, 0.55),
+    // The ruler width only sizes the scrollbar; no ruler line beside it.
+    overviewRulerBorder: "transparent",
   };
 }

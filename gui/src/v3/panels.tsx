@@ -14,7 +14,7 @@ import { moreFiles } from "./review.js";
 
 function Window({ title, aside, onHide, children }: { title: string; aside?: ReactNode; onHide: () => void; children: ReactNode }) {
   return (
-    <aside aria-label={title} className="flex w-[340px] shrink-0 flex-col overflow-hidden border-l border-ac-line bg-ac-panel">
+    <aside aria-label={title} className="flex w-[340px] shrink-0 flex-col overflow-hidden bg-ac-panel">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-ac-line px-3">
         <span className="text-[12px] font-semibold text-ac-text">{title}</span>
         <span className="ml-auto flex items-center gap-1">

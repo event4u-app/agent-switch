@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { ArrowDown, ArrowDownRight, ArrowRight, ArrowUp, ArrowUpRight, Check, ChevronDown, CircleX, Ellipsis, Eye, Lightbulb, Lock, MessageSquareText, Server, SquareTerminal, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ArrowDownRight, ArrowRight, ArrowUp, ArrowUpRight, Check, ChevronDown, CircleX, Ellipsis, Eye, Folder, FolderGit2, GitBranch, Lightbulb, Lock, MessageSquareText, Server, SquareTerminal, TriangleAlert, X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
@@ -225,7 +225,8 @@ export function TabStrip({
       // Like browser tabs (owner, 2026-11-25): tabs shrink first, then the part after the main tab scrolls sideways;
       // it never runs past the window or under the right stripe. The base line is an inset shadow, so
       // the clipped strip still lets the open tab cover it.
-      className={cn("flex h-9 min-w-0 shrink-0 items-end bg-ac-rail px-1 shadow-[inset_0_-1px_0_var(--ac-line)]", drag?.moving && "cursor-grabbing select-none")}>
+      // On the island itself, no band of its own (owner, 2026-11-26, islands).
+      className={cn("flex h-9 min-w-0 shrink-0 items-end px-1 shadow-[inset_0_-1px_0_var(--ac-line)]", drag?.moving && "cursor-grabbing select-none")}>
       {main && tab(main)}
       {main && (pins.length > 0 || rest.length > 0) && sep("main")}
       <div className="flex h-full min-w-0 flex-1 items-end gap-px overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -265,6 +266,88 @@ export interface BarSession {
   respawnWhy?: string;
   /** No terminal to switch to (a session started in the chat): the Terminal segment is off and says why. */
   terminalWhy?: string;
+  /** Where the agent works, for the status bar under the chat (owner, 2026-11-26). */
+  place?: SessionPlace | null;
+}
+
+export interface SessionPlace {
+  /** The folder the agent runs in. */
+  cwd: string | null;
+  /** The project: the repository (or folder) it belongs to, as the Projects grouping labels it. */
+  project: string | null;
+  /** That project's full path. */
+  projectRoot?: string | null;
+  branch: string | null;
+  /** The folder is a linked worktree, not the main checkout. */
+  worktree?: boolean;
+  /** Files changed, commits ahead of and behind its upstream; absent: not read. */
+  changed?: number | null;
+  ahead?: number;
+  behind?: number;
+}
+
+/** A path with the home folder as `~`. Pure. */
+export const tildePath = (p: string, home?: string | null): string => {
+  const h = home ?? (/^(\/Users\/[^/]+|\/home\/[^/]+)(?=\/|$)/.exec(p)?.[1] ?? null);
+  return h && (p === h || p.startsWith(h + "/")) ? "~" + p.slice(h.length) : p;
+};
+
+/**
+ * The status bar under the chat (owner, 2026-11-26), like an editor's: which
+ * project, which folder the agent runs in, which branch — one line, always in
+ * the same place. The path copies on click.
+ */
+export function StatusBar({ place, home }: { place: SessionPlace; /** The home folder, shown as ~; absent: read from the path. */ home?: string | null }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const id = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(id);
+  }, [copied]);
+  const path = place.cwd ? tildePath(place.cwd, home) : null;
+  const sep = <span aria-hidden className="h-3 w-px shrink-0 bg-ac-line" />;
+  return (
+    <footer role="contentinfo" aria-label="Session status" data-status-bar="" className="flex h-7 shrink-0 items-center gap-2.5 bg-ac-frame px-14 text-[11px] text-ac-muted">
+      {place.project && (
+        <span className="inline-flex min-w-0 shrink-0 items-center gap-1.5" title={place.projectRoot ? `Project · ${place.projectRoot}` : "Project"}>
+          <FolderGit2 aria-hidden className="size-3.5 shrink-0" />
+          <span className="max-w-[200px] truncate font-medium text-ac-soft">{place.project}</span>
+        </span>
+      )}
+      {place.project && path && sep}
+      {path && (
+        <button
+          type="button"
+          title={copied ? "Copied" : `${place.cwd} · click to copy`}
+          aria-label={`Working folder ${place.cwd}, copy path`}
+          onClick={() => void navigator.clipboard?.writeText(place.cwd!).then(() => setCopied(true), () => {})}
+          className="inline-flex min-w-0 items-center gap-1.5 rounded px-1 hover:bg-ac-raise hover:text-ac-text"
+        >
+          {/* No icon that comes and goes beside it: the folder turns into a check once copied. */}
+          {copied ? <Check aria-hidden className="size-3.5 shrink-0 text-ac-ok-text" /> : <Folder aria-hidden className="size-3.5 shrink-0" />}
+          {/* The end of a long path says the most: it truncates at the start. */}
+          <span className="truncate font-ac-mono [direction:rtl]">
+            <bdi>{path}</bdi>
+          </span>
+        </button>
+      )}
+      {place.branch && sep}
+      {place.branch && (
+        <span className="inline-flex min-w-0 shrink-0 items-center gap-1.5" title={place.worktree ? `Branch ${place.branch} · in a worktree` : `Branch ${place.branch}`}>
+          <GitBranch aria-hidden className="size-3.5 shrink-0" />
+          <span className="max-w-[220px] truncate font-ac-mono">{place.branch}</span>
+          {place.worktree && <span className="inline-flex h-4 items-center rounded border border-ac-line2 px-1 pb-px text-[10px] leading-none text-ac-soft">worktree</span>}
+          {!!place.ahead && <span title={`${place.ahead} ahead of upstream`}>↑{place.ahead}</span>}
+          {!!place.behind && <span title={`${place.behind} behind upstream`}>↓{place.behind}</span>}
+        </span>
+      )}
+      {place.changed != null && place.changed > 0 && (
+        <span className="ml-auto shrink-0" title={`${place.changed} changed file${place.changed === 1 ? "" : "s"}`}>
+          {place.changed} changed
+        </span>
+      )}
+    </footer>
+  );
 }
 
 /** The bar's chips that give way when it is narrow, by what stays longest: the last leaves first, where it runs last of all (8.6). */
