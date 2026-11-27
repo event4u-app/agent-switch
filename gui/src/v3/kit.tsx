@@ -7,7 +7,8 @@
  *    primary of a surface; everything else outline/ghost.
  *  - PageHeader, BatchBar, Later, Disclosure.
  */
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Archive, Check, ChevronDown, ChevronRight, Clock, FolderMinus, Pin, X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { identityColor } from "../ui/AccountDot.js";
@@ -148,13 +149,56 @@ export interface BatchActions {
  * A tooltip that shows at once on hover and keyboard focus, under its control, right-aligned
  * (owner, 2026-11-25: the native title shows late or not at all inside the design canvas).
  */
+const TIP_BOX = "pointer-events-none w-max max-w-[220px] rounded-md border border-ac-line2 bg-ac-panel px-2 py-1 text-[11px] leading-snug text-ac-text shadow-[var(--ac-shadow)]";
+
+/**
+ * A tooltip under a control, right-aligned to it. While shown it sits on the window shell, not in the
+ * pane, so a pane that scrolls or clips (a tool window's list) never cuts it (owner, 2026-11-27); it
+ * stays inside the window, shifted left or right as needed. Outside a shell (tests) it stays inline.
+ */
 export function Tip({ text, children }: { text: string; children: ReactNode }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [at, setAt] = useState<{ shell: HTMLElement; top: number; right: number; left: number; width: number } | null>(null);
+  const show = () => {
+    const el = ref.current;
+    const shell = el?.closest("[data-v3-shell]") as HTMLElement | null;
+    if (!el || !shell) return;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      const r = inShell(el);
+      setAt({ shell, top: r.bottom + 4, right: r.right, left: r.left, width: r.width });
+    }, 150);
+  };
+  const hide = () => {
+    if (timer.current) clearTimeout(timer.current);
+    setAt(null);
+  };
   return (
-    <span className="group/tip relative inline-flex">
+    <span ref={ref} className="group/tip relative inline-flex" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
       {children}
-      <span role="tooltip" className="pointer-events-none absolute right-0 top-full z-30 mt-1 w-max max-w-[220px] rounded-md border border-ac-line2 bg-ac-panel px-2 py-1 text-[11px] leading-snug text-ac-text opacity-0 shadow-[var(--ac-shadow)] transition-opacity delay-150 group-focus-within/tip:opacity-100 group-hover/tip:opacity-100">
-        {text}
-      </span>
+      {at ? (
+        createPortal(<TipOnShell text={text} at={at} />, at.shell)
+      ) : (
+        <span role="tooltip" className={cn(TIP_BOX, "absolute right-0 top-full z-30 mt-1 opacity-0", !ref.current?.closest("[data-v3-shell]") && "transition-opacity delay-150 group-focus-within/tip:opacity-100 group-hover/tip:opacity-100")}>
+          {text}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function TipOnShell({ text, at }: { text: string; at: { top: number; right: number; left: number; width: number } }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [left, setLeft] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const w = ref.current?.offsetWidth ?? 0;
+    // Right-aligned to the control; kept 4 px inside the window on both sides.
+    setLeft(Math.max(4, Math.min(at.right - w, at.width - w - 4)));
+  }, [at, text]);
+  return (
+    <span ref={ref} role="tooltip" className={cn(TIP_BOX, "absolute z-50")} style={{ top: at.top, left: left ?? at.right, visibility: left == null ? "hidden" : undefined }}>
+      {text}
     </span>
   );
 }

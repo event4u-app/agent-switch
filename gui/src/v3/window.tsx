@@ -35,7 +35,7 @@ import { SubagentView } from "./subagent-view.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
 import { allNeeds } from "./tools.js";
-import { AFTER_TURN_DOWN_WHY, BlockerStrip, HintStrip, ModelPopover, SessionBar, StatusBar, SystemBanner, TabStrip, engineDownText, HOSTED_HINT, type BarChipId, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
+import { AFTER_TURN_DOWN_WHY, BlockerStrip, HintStrip, ModelPopover, SessionBar, StatusBar, SubviewBar, SystemBanner, TabStrip, engineDownText, HOSTED_HINT, type BarChipId, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
 import { AccountMark, Act, inShell, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
@@ -605,7 +605,7 @@ export function V3Window({
         kind: "page" as const,
         id,
         ...(p.startsWith("review:")
-          ? { label: `Review · ${data.sessions.find((x) => x.key === p.slice(7))?.title ?? p.slice(7)}`, icon: <FileCode className="size-3.5" /> }
+          ? { label: `Review · ${data.sessions.find((x) => x.key === p.slice(7))?.title ?? p.slice(7)}`, icon: <FileCode className="size-3.5" />, bar: true }
           : p.startsWith("board:")
             ? { label: `Board · ${data.sessions.find((x) => x.key === p.slice(6))?.title ?? p.slice(6)}`, icon: <Swords className="size-3.5" /> }
             : PAGE_TAB[p as PageId | "sessions-table"]),
@@ -624,7 +624,17 @@ export function V3Window({
   });
 
   const page = (p: Page): ReactNode => {
-    if (p.startsWith("review:")) return slots.review ? slots.review(p.slice(7), reviewFocus.get(p.slice(7))) : null;
+    if (p.startsWith("review:")) {
+      const key = p.slice(7);
+      if (!slots.review) return null;
+      // A sub-view of the session (owner, 2026-11-27): a bar says so and leads back, as the subagent view and the board do.
+      return (
+        <section aria-label="Review" className="flex min-h-0 flex-1 flex-col">
+          <SubviewBar parentTitle={data.sessions.find((x) => x.key === key)?.title ?? key} onBack={() => openSession(key)} icon={<FileCode className="size-3.5 shrink-0 text-ac-muted" aria-hidden />} label="Review changes" />
+          <div className="flex min-h-0 flex-1 flex-col">{slots.review(key, reviewFocus.get(key))}</div>
+        </section>
+      );
+    }
     if (p.startsWith("board:")) return slots.board ? slots.board(p.slice(6), boardFocus.get(p.slice(6)), () => openSession(p.slice(6))) : null;
     if (p === "accounts")
       return (
