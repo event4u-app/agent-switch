@@ -36,7 +36,7 @@ import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, Set
 import type { Appearance } from "./themes/resolve.js";
 import { allNeeds } from "./tools.js";
 import { AFTER_TURN_DOWN_WHY, BlockerStrip, HintStrip, ModelPopover, SessionBar, StatusBar, SubviewBar, SystemBanner, TabStrip, engineDownText, HOSTED_HINT, type BarChipId, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
-import { AccountMark, Act, inShell, type BatchActions } from "./kit.js";
+import { AccountMark, Act, CountBadge, inShell, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding } from "./keys.js";
@@ -1257,6 +1257,4 @@ export function V3Window({
 }
 
 /** A tab's or button's count, the pill the stripe and groups use. */
-function PaneCount({ n, tone }: { n: number; tone?: "warn" }) {
-  return <span className={cn("ml-1 inline-flex h-4 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-normal tabular-nums leading-none", tone === "warn" ? "ac-nudge bg-ac-warn-tint text-ac-warn-text" : "bg-ac-line text-ac-soft")}>{n}</span>;
-}
+const PaneCount = CountBadge;

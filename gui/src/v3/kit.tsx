@@ -203,6 +203,11 @@ function TipOnShell({ text, at }: { text: string; at: { top: number; right: numb
   );
 }
 
+/** A count in a pill, as the Sessions window's tabs show it ("Needs you 6"); warn pulses softly. */
+export function CountBadge({ n, tone }: { n: number; tone?: "warn" }) {
+  return <span className={cn("ml-1 inline-flex h-4 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-normal tabular-nums leading-none", tone === "warn" ? "ac-nudge bg-ac-warn-tint text-ac-warn-text" : "bg-ac-line text-ac-soft")}>{n}</span>;
+}
+
 export function BatchBar({ count, compact, className, actions }: { count: number; compact?: boolean; className?: string; actions: BatchActions }) {
   const none = count === 0;
   // The list's bar (owner, 2026-11-25): no End here, each icon says what it does and waits for a selection.

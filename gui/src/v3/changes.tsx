@@ -15,7 +15,7 @@ import { Archive, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Eye
 import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
-import { Act, CheckBox, Tip } from "./kit.js";
+import { Act, CheckBox, CountBadge, Tip } from "./kit.js";
 import { Window, REVIEW_LATER, type ChangedFile } from "./panels.js";
 import { moreFiles } from "./review.js";
 
@@ -401,9 +401,9 @@ export function ChangesWindow({
           value={tab}
           onChange={setTab}
           options={[
-            { value: "changes", label: `Changes ${files.length + more}` },
-            { value: "shelf", label: `Shelf ${shelves.length}` },
-            { value: "stash", label: git ? `Stash ${stashes.length}` : "Stash", disabled: !git, why: "Not a git repository: the Shelf keeps local copies here" },
+            { value: "changes", label: <>Changes <CountBadge n={files.length + more} /></> },
+            { value: "shelf", label: <>Shelf <CountBadge n={shelves.length} /></> },
+            { value: "stash", label: git ? <>Stash <CountBadge n={stashes.length} /></> : "Stash", disabled: !git, why: "Not a git repository: the Shelf keeps local copies here" },
           ]}
         />
       </div>
