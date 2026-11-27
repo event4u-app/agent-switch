@@ -23,7 +23,9 @@ import { MenuSection, POPOVER_TRIGGER } from "./menus.js";
 
 /** Tab: rounded top corners; the active one is framed with a 2 px accent top edge and joins the content below (spec §3.2). */
 export const TAB = "relative flex h-[33px] min-w-0 items-center gap-2 rounded-t-md border-x border-t-2 px-3 text-xs";
+/** The open tab takes the colour of what sits right under it (owner, 2026-11-27): a session's bar, a page's body. */
 export const TAB_ON = "border-ac-line border-t-ac-brand bg-ac-bg text-ac-text";
+const TAB_ON_SESSION = "border-ac-line border-t-ac-brand bg-ac-panel text-ac-text";
 
 export type TabItem = { kind: "page"; id: string; label: string; icon: ReactNode } | { kind: "session"; id: string; title: string; state: SessionState };
 
@@ -182,7 +184,7 @@ export function TabStrip({
             className={cn(
               TAB,
               pin ? "shrink-0 justify-center gap-1.5 px-2.5" : isMain ? cn("group min-w-[120px] shrink-0", t.kind === "session" ? "max-w-[220px]" : "max-w-[300px]") : t.kind === "session" ? "group min-w-[120px] max-w-[220px] shrink" : "min-w-[120px] max-w-[300px] shrink",
-              on ? TAB_ON : "border-transparent text-ac-muted hover:bg-ac-raise hover:text-ac-text",
+              on ? (t.kind === "session" ? TAB_ON_SESSION : TAB_ON) : "border-transparent text-ac-muted hover:bg-ac-raise hover:text-ac-text",
               drag?.moving && drag.id === t.id && "opacity-50",
               // While a tab drags, the tabs of the other groups dim: it can only land among its own.
               drag?.moving && drag.id !== t.id && rankOf(drag.id) !== rank(t) && "opacity-40",
