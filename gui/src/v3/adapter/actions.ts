@@ -6,7 +6,7 @@ import type { SessionRow } from "../../transforms.js";
 import { accountId, accountIdFromMember, sessionFromRow } from "../../vm/build.js";
 import { splitAccountId, type Actions } from "../../vm/actions.js";
 import { createElement } from "react";
-import { sessionArgs, type CleanupJson, type PrConfirmJson, type PrPlanJson, type StartChoice, type SwitchRequestRow } from "../../ipc.js";
+import { sessionArgs, type ChangesOpArgs, type CleanupJson, type PrConfirmJson, type PrPlanJson, type StartChoice, type SwitchRequestRow } from "../../ipc.js";
 import { requestKind, requestsForMoves } from "../../vm/switch-requests.js";
 import type { Overlay, TerminalRun, Toast } from "../../vm/store.js";
 import type { ProviderId } from "../../transforms.js";
@@ -45,6 +45,8 @@ export interface DispatchIpc {
   prCreatePlan(key: string, base?: string): Promise<PrPlanJson>;
   /** Pushes what was confirmed and creates the PR (refused when it changed since); the PR's URL. */
   prCreate(key: string, confirmed: PrConfirmJson): Promise<string>;
+  /** The Changes window's Rollback, Shelve, Stash, Snapshot and their undo. */
+  changesOp(key: string, op: ChangesOpArgs): Promise<void>;
   engineRestart(): Promise<void>;
   renameSession(key: string, name: string): Promise<void>;
   openSessionIn(key: string, target?: string): Promise<void>;
@@ -67,6 +69,8 @@ export interface DispatchDeps {
   /** Bring the window forward (a limit opened its decision sheet). */
   reveal?: () => void;
   rows: () => ReadonlyMap<string, SessionRow>;
+  /** Re-read a session's changes, Shelf and stashes now. */
+  refreshChanges?: (key: string) => void;
   needs: () => readonly NeedItem[];
   /** The switch requests shared with agent-config; a move answers them. */
   requests?: () => readonly SwitchRequestRow[];
@@ -466,6 +470,12 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
     case "open-pr": {
       const url = prUrl(deps.rows().get(a.key));
       return url ? deps.openUrl(url) : undefined;
+    }
+    case "changes": {
+      const { type: _t, key, ...op } = a;
+      if (op.op === "refresh") return deps.refreshChanges?.(key);
+      const label = { rollback: "Rollback", shelve: "Shelve", stash: "Stash", snapshot: "Snapshot", "stash-apply": "Apply stash", "stash-pop": "Pop stash", "stash-drop": "Drop stash", unshelve: "Unshelve", "shelf-drop": "Delete from the Shelf" }[op.op];
+      return run(deps, label, deps.ipc.changesOp(key, op).finally(() => deps.refreshChanges?.(key)));
     }
     case "review":
     case "commit":

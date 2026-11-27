@@ -26,7 +26,8 @@ import { HistorySheet } from "./history.js";
 import { RunsPage, runRows, runningCounts } from "./runs.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession, type StatusTab } from "./pages.js";
-import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
+import { ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
+import { ChangesWindow, type ChangesOp, type ChangesSource, type ShelfEntry, type StashEntry } from "./changes.js";
 import type { ReviewFocus } from "./review.js";
 import { DEFAULT_SORT, SessionsZone, statusGroup, sortLive, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
 import { Segmented } from "../ui/Segmented.js";
@@ -85,6 +86,14 @@ export interface V3Data {
   changes: (key: string) => ChangedFile[];
   /** Changed files past the Changes list's cap (it names them as a count). */
   changesMore?: (key: string) => number;
+  /** Where a session's changes come from: git (vs HEAD) or a folder without git (vs its last local snapshot); git when absent. */
+  changesSource?: (key: string) => ChangesSource;
+  /** The git stashes of the session's repository. */
+  stashes?: (key: string) => StashEntry[];
+  /** The Shelf of the session's folder: local copies Agent Switch keeps. */
+  shelves?: (key: string) => ShelfEntry[];
+  /** Rollback, Shelve, Stash… can run; when false the toolbar says they arrive later. */
+  changesOps?: boolean;
   next:(key: string) => { text: string; action: string } | null;
   /** The session-menu entries that do something for this session; all when absent. */
   menu?: (key: string) => readonly SessionMenuItem[];
@@ -140,6 +149,8 @@ export type V3Action =
   | { type: "set-thinking"; key: string; level: string }
   | { type: "blocker"; key: string }
   | { type: "create-pr" | "open-pr" | "review" | "commit"; key: string }
+  /** The Changes window's toolbar, Shelf and Stash (owner, 2026-11-27). */
+  | ({ type: "changes"; key: string } & ChangesOp)
   | { type: "account"; op: "add" | "refresh" | "use" | "sign-in" | "terminal" | "more"; key?: string }
   | { type: "library"; op: "auto-keep"; value: boolean }
   | { type: "library"; op: "pin" | "archive"; key: string; value: boolean }
@@ -885,7 +896,7 @@ export function V3Window({
       const f = data.summary(activeSession);
       return f && <SummaryWindow f={f} onNext={() => act({ type: "blocker", key: activeSession })} onCreatePr={() => act({ type: "create-pr", key: activeSession })} onOpenPr={() => act({ type: "open-pr", key: activeSession })} onHide={() => frame.setRight(null)} moreOpen={moreOpen} onToggleMore={() => setMoreOpen((v) => !v)} onReview={slots.review ? () => openReview(activeSession) : undefined} />;
     }
-    if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} more={data.changesMore?.(activeSession) ?? 0} reviewAvailable={!!slots.review} commitAvailable={data.commitAvailable ?? true} onReview={(file) => (slots.review ? openReview(activeSession, file) : act({ type: "review", key: activeSession }))} onCommit={() => (slots.review ? openReview(activeSession) : act({ type: "commit", key: activeSession }))} onHide={() => frame.setRight(null)} />;
+    if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} more={data.changesMore?.(activeSession) ?? 0} reviewAvailable={!!slots.review} commitAvailable={data.commitAvailable ?? true} onReview={(file) => (slots.review ? openReview(activeSession, file) : act({ type: "review", key: activeSession }))} onCommit={() => (slots.review ? openReview(activeSession) : act({ type: "commit", key: activeSession }))} onHide={() => frame.setRight(null)} source={data.changesSource?.(activeSession)} stashes={data.stashes?.(activeSession) ?? []} shelves={data.shelves?.(activeSession) ?? []} onRun={data.changesOps === false ? undefined : (op) => act({ type: "changes", key: activeSession, ...op })} />;
     const s = data.sessions.find((x) => x.key === activeSession);
     return s && <ChildrenWindow noun={childNoun(s)} children={s.children} onHide={() => frame.setRight(null)} subagents={!!openSubagent} onOpen={(c) => (childOpens(c) ? openSession(c.id) : openSubagent?.(activeSession, c.id))} />;
   })();

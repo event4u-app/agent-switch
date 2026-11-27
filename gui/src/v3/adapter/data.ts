@@ -12,6 +12,7 @@ import { paceFor, type LimitAccount, type LimitWindow } from "../limits.js";
 import type { DoneItem, PaletteEntry } from "../overlays.js";
 import type { LibraryRow, PageAccount, TableSession } from "../pages.js";
 import type { ChangedFile, SummaryFacts } from "../panels.js";
+import type { ChangesExtra } from "./feeds.js";
 import { childNoun, subagentLabel, type ChildModel, type ChildSource, type ChildTool, type RowSession } from "../sessions.js";
 import type { OpenTarget } from "../settings.js";
 import type { Appearance } from "../themes/resolve.js";
@@ -41,6 +42,8 @@ export interface AdapterEnv {
   changes: ReadonlyMap<string, ChangedFile[]>;
   /** Changed files past the list's cap, per session key (`more` of the same read). */
   changesMore?: ReadonlyMap<string, number>;
+  /** Where the changes come from, the Shelf and the stashes, per session key (the same read). */
+  changesExtra?: ReadonlyMap<string, ChangesExtra>;
   /** Ask for a session's changed files; the caller dedupes and reads. */
   wantChanges: (key: string) => void;
   /** Sessions this window shows in the chat view (their bridges run here). */
@@ -773,6 +776,12 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       return env.changes.get(key) ?? [];
     },
     changesMore: (key) => env.changesMore?.get(key) ?? 0,
+    changesSource: (key) => {
+      const src = env.changesExtra?.get(key)?.source;
+      return src?.kind === "local" ? { kind: "local", snapshot: src.snapshot ? shortAge(src.snapshot, now ?? Date.now()) + " ago" : null } : { kind: "git" };
+    },
+    shelves: (key) => (env.changesExtra?.get(key)?.shelves ?? []).map((e) => ({ id: e.id, message: e.message, ago: `${shortAge(e.created, now ?? Date.now())} ago`, files: e.files, kind: e.kind })),
+    stashes: (key) => (env.changesExtra?.get(key)?.stashes ?? []).map((e) => ({ ref: e.ref, message: e.message, ago: `${shortAge(e.created, now ?? Date.now())} ago`, files: e.files, branch: e.branch })),
     next: (key) => {
       const r = byKey.get(key);
       const n = r ? nextStep(r, needing.has(key) && focusOk(r, key)) : null;

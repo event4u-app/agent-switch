@@ -225,7 +225,7 @@ async function main(): Promise<void> {
       return writeVisibility(visibilityFile(ROOT), positional[0] === "visible");
     case "pr": return positional[0] === "create" ? cmdPrCreate(positional[1], flags) : cmdPr(positional[0], flags);
     case "worktrees": return cmdWorktrees(flags);
-    case "changes": return cmdChanges(positional[0], flags);
+    case "changes": return cmdChanges(positional, flags);
     case "timeline": return cmdTimeline(positional[0], flags);
     case "workflows": return cmdWorkflows(positional[0], flags);
     case "arena": return cmdArena(positional, flags);

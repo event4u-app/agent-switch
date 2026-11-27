@@ -8,8 +8,9 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { die } from "../profiles.js";
+import { die, ROOT } from "../profiles.js";
 import { sessionsWithGit } from "./pr.js";
+import { baseOf, dropEntry, findEntry, inside, listShelf, listStashes, localChanges, restoreEntry, rollbackGit, rollbackLocal, shelve, snapshot, stashOp } from "./shelf.js";
 
 export interface ChangedFile {
   status: "A" | "M" | "D" | "R" | "?";
@@ -105,15 +106,97 @@ export function changesIn(toplevel: string): ChangedFile[] | null {
   return changeInventory(toplevel)?.files ?? null;
 }
 
-export function cmdChanges(session: string | undefined, flags: Record<string, string | boolean>): void {
-  if (!session) die("usage: agent-switch changes <session> [--json]");
+const OPS = ["rollback", "shelve", "unshelve", "shelf-drop", "snapshot", "stash", "stash-apply", "stash-pop", "stash-drop"] as const;
+type Op = (typeof OPS)[number];
+const USAGE =
+  "usage: agent-switch changes <session> [--json] · changes <session> rollback|shelve|stash [--text MSG] <file>… · changes <session> snapshot [--text MSG] · changes <session> unshelve|shelf-drop <id> · changes <session> stash-apply|stash-pop|stash-drop <stash@{n}>";
+
+/** The session's folder: its git toplevel, or — without git — the folder it runs in. */
+function folderOf(session: string): { key: string; root: string; git: boolean } {
   const id = session.split("/").pop()!;
   const row = sessionsWithGit(50).find((r) => r.key === session || r.row.sessionId === id);
   if (!row) die(`no recent Claude or Codex session ${session}`);
-  if (!row.git) die(`${row.key} does not work in a git repository`);
-  const { files, more } = changeInventory(row.git.toplevel) ?? { files: [], more: 0 };
-  if (flags.json) return void console.log(JSON.stringify({ key: row.key, worktree: row.git.toplevel, files, more }, null, 2));
-  if (files.length === 0) return void console.log(`No changes in ${row.git.toplevel}.`);
-  for (const f of files) console.log(`${f.status} ${f.path}  +${f.added} -${f.removed}`);
-  if (more) console.log(`${more} more ${more === 1 ? "file" : "files"} not listed.`);
+  if (row.git) return { key: row.key, root: row.git.toplevel, git: true };
+  if (!row.row.cwd) die(`${row.key} has no known folder`);
+  return { key: row.key, root: row.row.cwd, git: false };
+}
+
+/**
+ * `changes <session> [--json]`: the changed files (git: vs HEAD; without git: vs the last local snapshot), the
+ * Shelf and, in a repository, the stashes. `changes <session> <op> …`: Rollback, Shelve, Stash, Snapshot and
+ * their undo, as the Changes window runs them.
+ */
+export function cmdChanges(args: readonly string[], flags: Record<string, string | boolean>): void {
+  const [session, op, ...rest] = args;
+  if (!session) die(USAGE);
+  const f = folderOf(session);
+  const shelfRoot = path.join(ROOT, "shelf");
+  if (op) {
+    if (!(OPS as readonly string[]).includes(op)) die(USAGE);
+    const message = typeof flags.text === "string" ? flags.text : "";
+    try {
+      runOp(op as Op, f, shelfRoot, rest, message);
+    } catch (e) {
+      die(e instanceof Error ? e.message : String(e));
+    }
+    return void console.log(flags.json ? JSON.stringify({ ok: true, op }) : `${op}: done`);
+  }
+  const shelf = listShelf(shelfRoot, f.root);
+  const shelves = shelf.map((e) => ({ id: e.id, message: e.message, created: e.created, kind: e.kind, full: !!e.full, files: e.files.length }));
+  if (f.git) {
+    const { files, more } = changeInventory(f.root) ?? { files: [], more: 0 };
+    if (flags.json) return void console.log(JSON.stringify({ key: f.key, worktree: f.root, source: { kind: "git" }, files, more, shelves, stashes: listStashes(f.root) }, null, 2));
+    if (files.length === 0) console.log(`No changes in ${f.root}.`);
+    for (const x of files) console.log(`${x.status} ${x.path}  +${x.added} -${x.removed}`);
+    if (more) console.log(`${more} more ${more === 1 ? "file" : "files"} not listed.`);
+    return;
+  }
+  const base = baseOf(shelf);
+  const all = localChanges(shelfRoot, f.root);
+  const files = (all ?? []).slice(0, MAX_CHANGED_FILES);
+  const more = (all?.length ?? 0) - files.length;
+  if (flags.json) return void console.log(JSON.stringify({ key: f.key, worktree: f.root, source: { kind: "local", snapshot: base ? base.created : null }, files, more, shelves, stashes: [] }, null, 2));
+  if (!base) return void console.log(`${f.root} is not a git repository and has no snapshot yet: agent-switch changes ${f.key} snapshot`);
+  if (files.length === 0) console.log(`No changes in ${f.root} since the snapshot.`);
+  for (const x of files) console.log(`${x.status} ${x.path}  +${x.added} -${x.removed}`);
+}
+
+function runOp(op: Op, f: { root: string; git: boolean }, shelfRoot: string, rest: readonly string[], message: string): void {
+  const needFiles = () => {
+    if (rest.length === 0) throw new Error(`${op}: name the files`);
+    for (const r of rest) if (!inside(f.root, r)) throw new Error(`${r} is not inside ${f.root}`);
+    return rest;
+  };
+  const needGit = () => {
+    if (!f.git) throw new Error(`${f.root} is not a git repository; the Shelf works here`);
+  };
+  switch (op) {
+    case "rollback":
+      return f.git ? rollbackGit(f.root, needFiles()) : rollbackLocal(shelfRoot, f.root, needFiles());
+    case "shelve":
+      return void shelve(shelfRoot, f.root, needFiles(), message, f.git);
+    case "snapshot": {
+      const s = snapshot(shelfRoot, f.root, message);
+      if (s.capped) console.error(`snapshot stopped at ${s.files.length} files`);
+      return;
+    }
+    case "unshelve": {
+      const e = findEntry(shelfRoot, f.root, rest[0] ?? "");
+      restoreEntry(shelfRoot, f.root, e);
+      // A shelved change goes back and leaves the Shelf; a snapshot stays, as a point to return to.
+      if (!e.full) dropEntry(shelfRoot, f.root, e.id);
+      return;
+    }
+    case "shelf-drop":
+      findEntry(shelfRoot, f.root, rest[0] ?? "");
+      return dropEntry(shelfRoot, f.root, rest[0]);
+    case "stash":
+      needGit();
+      return stashOp(f.root, "push", { files: needFiles(), message });
+    case "stash-apply":
+    case "stash-pop":
+    case "stash-drop":
+      needGit();
+      return stashOp(f.root, op.slice(6) as "apply" | "pop" | "drop", { ref: rest[0] });
+  }
 }

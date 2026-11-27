@@ -26,6 +26,7 @@ import type { LimitAccount } from "../limits.js";
 import type { RowSession } from "../sessions.js";
 import type { TableSession } from "../pages.js";
 import type { ChangedFile, SummaryFacts } from "../panels.js";
+import type { ShelfEntry, StashEntry } from "../changes.js";
 import { Review } from "../review.js";
 import type { ReviewFileJson } from "../../ipc.js";
 import type { TermBackend } from "../../terminal.js";
@@ -107,7 +108,7 @@ const SESSIONS: RowSession[] = [
   S({ key: "claude/personal/s-checkout", title: "Checkout flow accessibility", state: "needs-you", account: { name: "personal", nearLimit: false }, branch: "a11y/checkout", pr: { number: 311, ci: "FAILURE", mergeable: "CONFLICTING" }, needsYou: true,
     children: [{ id: "u1", label: "claude --print in /tmp/tmp.k2J9", kind: "unknown", state: "done", source: "unknown" }] }),
   // Ended yesterday: the status grouping's "Older" group.
-  S({ key: "claude/work/s-spike", title: "Spike: tmux control mode", state: "done", branch: "spike/tmux-cc", lastActiveMs: NOW - 26 * 60 * MIN, doneToday: true }),
+  S({ key: "claude/work/s-spike", title: "Spike: tmux control mode", state: "done", lastActiveMs: NOW - 26 * 60 * MIN, doneToday: true }),
 ];
 
 const BAR: Record<string, { model: string; thinking: string; ctx: number; hosted: boolean; acct: string; color: "teal" | "pink" | "purple" | "orange"; five: number; protect: number }> = {
@@ -147,6 +148,27 @@ const CHANGES_OF: Record<string, ChangedFile[]> = {
   "claude/personal/s-notes": [{ status: "A", path: "docs/release-2.11.md", added: 86, removed: 0 }],
 };
 const changesOf = (key: string) => CHANGES_OF[key] ?? [];
+
+/** The spike runs in a scratch folder without git: its Changes compare against a local snapshot (owner, 2026-11-27). */
+CHANGES_OF["claude/work/s-spike"] = [
+  { status: "M", path: "spike/control-mode.ts", added: 31, removed: 7 },
+  { status: "A", path: "spike/notes.md", added: 18, removed: 0 },
+];
+const LOCAL = new Set(["s-spike"]);
+const STASHES_OF: Record<string, StashEntry[]> = {
+  "claude/personal/s-themes": [
+    { ref: "stash@{0}", message: "try the warmer Darcula accent", ago: "2h ago", files: 2, branch: "theme/darcula" },
+    { ref: "stash@{1}", message: "WIP contrast check", ago: "1d ago", files: 4, branch: "main" },
+  ],
+  "claude/work/s-store": [{ ref: "stash@{0}", message: "projection rewrite, half done", ago: "3h ago", files: 3, branch: "feat/event-store" }],
+};
+const SHELF_OF: Record<string, ShelfEntry[]> = {
+  "claude/personal/s-themes": [{ id: "lq2x-a1", message: "Theme picker experiment", ago: "40m ago", files: 3, kind: "git" }],
+  "claude/work/s-spike": [
+    { id: "lq1a-b2", message: "Before the second approach", ago: "1h ago", files: 12, kind: "local" },
+    { id: "lq0z-c3", message: "Start", ago: "4h ago", files: 9, kind: "local" },
+  ],
+};
 
 /** Review files for the fixture: one small hunk per changed file. */
 const reviewFiles = (key: string): ReviewFileJson[] =>
@@ -312,6 +334,9 @@ export function makeData(o: { theme: string; accent: Accent; health?: string; aw
       ? { next: { text: "CI fails on e2e and the branch conflicts with main. One prompt: rebase, then fix e2e (log attached).", action: "Send to agent" }, pr: { number: 311, url: "#", ci: "FAILURE", lifecycle: "OPEN", mergeable: "CONFLICTING", review: "CHANGES_REQUESTED", failingChecks: ["e2e (chromium)"] }, git: { branch: "a11y/checkout", worktree: false, changed: changesOf("claude/personal/s-checkout").length, ahead: 5, behind: 9 }, limit: null, more: { id: "claude:personal/7a1c…e02", host: "tmux · as-personal-2", library: "not pinned", children: "1 related session" } }
       : { next: { text: "#142 needs a review; you'll hear when CI is done.", action: "Request review" }, pr: { number: 142, url: "#", ci: "PENDING", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "REVIEW_REQUIRED", failingChecks: [] }, git: { branch: "feat/event-store", worktree: true, changed: changesOf("claude/work/s-store").length, ahead: 3, behind: 0 }, limit: null, more: { id: "claude:work/9f2c…e41a", host: "tmux · as-work-3", library: "pinned · in vault", children: "3 subagents" } },
   changes: (key) => changesOf(key),
+  changesSource: (key) => (LOCAL.has(key.split("/").pop()!) ? { kind: "local", snapshot: "1h ago" } : { kind: "git" }),
+  stashes: (key) => STASHES_OF[key] ?? [],
+  shelves: (key) => SHELF_OF[key] ?? [],
   next: (key) => (key.endsWith("s-checkout") ? { text: "CI fails on e2e and the branch conflicts with main. One prompt: rebase, then fix e2e (log attached).", action: "Send to agent" } : null),
   };
 }
@@ -329,6 +354,7 @@ function placeOf(key: string) {
   const id = key.split("/").pop()!;
   const dir = CWD_OF[id] ?? "agent-switch";
   const project = dir.split(".worktrees")[0];
+  if (LOCAL.has(id)) return { cwd: "/Users/matze/scratch/tmux-spike", project: "tmux-spike", projectRoot: "/Users/matze/scratch/tmux-spike", branch: null, worktree: false, changed: changesOf(key).length };
   return {
     cwd: `/Users/matze/code/${dir}`,
     project,
@@ -407,7 +433,12 @@ export function Scene({ view = "main", theme = "darcula", accent = "theme", heal
     ),
     body: (key) =>
       BAR[key]?.hosted === false ? (
-        <ExternalBody facts={<p>as-hook p95 benchmark · ~/code/agent-switch · perf/as-hook</p>} lastLine="as-hook is 6.7× faster at p95 (6.2 ms vs 41.8 ms)." />
+        key.endsWith("/s-spike") ? (
+          // The spike runs in a scratch folder without git, as its status bar and Changes say.
+          <ExternalBody facts={<p>Spike: tmux control mode · ~/scratch/tmux-spike · no repo</p>} lastLine="Control mode keeps one connection per server; notes in spike/notes.md." />
+        ) : (
+          <ExternalBody facts={<p>as-hook p95 benchmark · ~/code/agent-switch · perf/as-hook</p>} lastLine="as-hook is 6.7× faster at p95 (6.2 ms vs 41.8 ms)." />
+        )
       ) : inChat(key) ? (
         // As the app's ChatView: the timeline, then the message box (copy is in ⋯, proposal C).
         <div className="flex h-full min-h-0 flex-col bg-ac-bg">
