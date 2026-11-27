@@ -376,7 +376,7 @@ export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group: 
           )}
           <Table cols={cols} heads={heads}>
             {sec.rows.map((s) => (
-              <div key={s.key} onClick={() => onOpen(s.key)} className={cn("grid cursor-default items-center gap-3 border-b border-ac-line px-3 py-2 last:border-b-0 hover:bg-ac-raise", cols)}>
+              <div key={s.key} data-session-row={s.key} onClick={() => onOpen(s.key)} className={cn("grid cursor-default items-center gap-3 border-b border-ac-line px-3 py-2 last:border-b-0 hover:bg-ac-raise", cols)}>
                 <CheckBox label={`Select ${s.title}`} checked={sel.has(s.key)} onChange={() => toggle(s.key)} />
                 <span className="min-w-0">
                   <span className="flex min-w-0 items-center gap-2">

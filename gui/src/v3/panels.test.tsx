@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { ChangesWindow, ChildrenWindow, SummaryWindow, changedFiles, type SummaryFacts } from "./panels.js";
+import { ChildrenWindow, SummaryWindow, changedFiles, type SummaryFacts } from "./panels.js";
+import { ChangesWindow } from "./changes.js";
 
 afterEach(cleanup);
 const facts = (over: Partial<SummaryFacts> = {}): SummaryFacts => ({
@@ -39,8 +40,8 @@ describe("right tool windows (spec §9)", () => {
     const files = changedFiles("12\t3\tsrc/a.ts\n40\t0\tsrc/new.ts\n", " M src/a.ts\nA  src/new.ts\n?? notes.md\n");
     expect(files.map((f) => [f.status, f.path, f.added, f.removed])).toEqual([["M", "src/a.ts", 12, 3], ["A", "src/new.ts", 40, 0], ["?", "notes.md", 0, 0]]);
     render(<ChangesWindow files={files} onReview={vi.fn()} onCommit={vi.fn()} onHide={vi.fn()} reviewAvailable={false} />);
-    expect(screen.getByText("worktree vs HEAD")).toBeTruthy();
-    expect(screen.getByText(/3 files/)).toBeTruthy();
+    expect(screen.getByText("vs HEAD")).toBeTruthy();
+    expect(screen.getByText(/^3 files ·/)).toBeTruthy();
     expect((screen.getByText("Review changes").closest("button") as HTMLButtonElement).disabled).toBe(true);
   });
 

@@ -43,6 +43,7 @@ function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "l
     openApp: vi.fn(async () => {}),
     continueSession: vi.fn(async () => {}),
     takeoverHosted: vi.fn(async () => {}),
+    changesOp: vi.fn(async () => {}),
   };
   const rows = new Map<string, SessionRow>([
     ["claude/work/a", row("a", { prs: [PR], git: { toplevel: "/r", branch: "feat/x", headSha: "h", dirty: false, changed: 0, ahead: 1, behind: 0, upstream: "origin/feat/x", remote: "git@github.com:o/r.git", worktree: false, cwd: "/r", cwdSource: "hook" } })],
@@ -75,6 +76,19 @@ const pickBase = (b: string) => {
 };
 
 describe("dispatchV3", () => {
+  it("changes: Shelve, Stash… run the CLI and re-read the list; Refresh only re-reads", async () => {
+    const refreshChanges = vi.fn();
+    const d = { ...deps(), refreshChanges };
+    await dispatchV3({ type: "changes", key: "claude/work/a", op: "stash", files: ["a.ts"], message: "wip" }, d);
+    await flush();
+    expect(d.ipc.changesOp).toHaveBeenCalledWith("claude/work/a", { op: "stash", files: ["a.ts"], message: "wip" });
+    expect(refreshChanges).toHaveBeenCalledWith("claude/work/a");
+    (d.ipc.changesOp as ReturnType<typeof vi.fn>).mockClear();
+    await dispatchV3({ type: "changes", key: "claude/work/a", op: "refresh" }, d);
+    expect(d.ipc.changesOp).not.toHaveBeenCalled();
+    expect(refreshChanges).toHaveBeenCalledTimes(2);
+  });
+
   it("open-in: default, a target, the tool's app on the session's account, the PR, focus", async () => {
     const d = deps();
     await dispatchV3({ type: "open-in", key: "claude/work/a", pick: { kind: "default" } }, d);

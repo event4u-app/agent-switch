@@ -15,6 +15,8 @@ import {
   parseAgents,
   parseRemote,
   parseChanges,
+  parseChangesExtra,
+  type ChangesExtra,
   parseEngine,
   parseHistory,
   parseHostList,
@@ -537,10 +539,24 @@ export async function setAutoKeep(on: boolean): Promise<void> {
 }
 
 /** `changes <session> --json`: the session's changed files against HEAD, and how many more there are past the list's cap. */
-export async function sessionChanges(key: string): Promise<{ files: ChangedFileRow[]; more: number }> {
+export async function sessionChanges(key: string): Promise<{ files: ChangedFileRow[]; more: number } & ChangesExtra> {
   const o: unknown = JSON.parse(await runCli(["changes", key, "--json"]));
   const more = (o as { more?: unknown } | null)?.more;
-  return { files: parseChanges(o), more: typeof more === "number" && more > 0 ? more : 0 };
+  return { files: parseChanges(o), more: typeof more === "number" && more > 0 ? more : 0, ...parseChangesExtra(o) };
+}
+
+/** The Changes window's toolbar, Shelf and Stash: `changes <session> <op> [--text MSG] <files|id|ref>…`. */
+export type ChangesOpArgs =
+  | { op: "rollback"; files: string[] }
+  | { op: "shelve" | "stash"; files: string[]; message: string }
+  | { op: "snapshot"; message: string }
+  | { op: "stash-apply" | "stash-pop" | "stash-drop"; ref: string }
+  | { op: "unshelve" | "shelf-drop"; id: string };
+
+export async function changesOp(key: string, a: ChangesOpArgs): Promise<void> {
+  const text = "message" in a && a.message ? ["--text", a.message] : [];
+  const rest = "files" in a ? a.files : "ref" in a ? [a.ref] : "id" in a ? [a.id] : [];
+  await runCli(["changes", key, a.op, ...text, ...rest]);
 }
 
 /** What a new session starts with beyond its account (CLI `--model`, `--effort`, `--worktree`). */

@@ -62,6 +62,9 @@ export const BOARDS: Record<string, Board> = {
   end: { steps: [{ click: "Session actions" }, { click: "End…" }] },
   accounts: { steps: [{ click: "Accounts" }] },
   table: { steps: [{ key: "k", mod: true }, { click: "All sessions" }] },
+  /** The Changes window after PhpStorm's (owner, 2026-11-27); "changes-local": a folder without git (the spike). */
+  changes: { steps: [{ click: "Changes" }] },
+  "changes-local": { steps: [{ key: "k", mod: true }, { click: "All sessions" }, { wait: 300 }, { click: "Spike: tmux control mode" }, { wait: 300 }, { click: "Changes" }] },
   library: { steps: [{ click: "Library" }] },
   // The resume preflight lives outside V3Window (act → app); this board shows where it starts.
   resume: { steps: [{ click: "Library" }] },
@@ -83,7 +86,7 @@ export const BOARDS: Record<string, Board> = {
   hints: { scene: { view: "hints" } },
 };
 
-const CLICKABLE = 'button, [role="button"], a[href], [role="tab"], [role="radio"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="switch"], [role="checkbox"]';
+const CLICKABLE = 'button, [role="button"], a[href], [role="tab"], [role="radio"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="switch"], [role="checkbox"], [data-session-row]';
 
 const nameOf = (e: Element) => (e.getAttribute("aria-label") ?? e.textContent ?? "").replace(/\s+/g, " ").trim();
 

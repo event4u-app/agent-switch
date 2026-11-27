@@ -26,7 +26,8 @@ import { HistorySheet } from "./history.js";
 import { RunsPage, runRows, runningCounts } from "./runs.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession, type StatusTab } from "./pages.js";
-import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
+import { ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
+import { ChangesWindow, type ChangesOp, type ChangesSource, type ShelfEntry, type StashEntry } from "./changes.js";
 import type { ReviewFocus } from "./review.js";
 import { DEFAULT_SORT, SessionsZone, statusGroup, sortLive, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
 import { Segmented } from "../ui/Segmented.js";
@@ -34,8 +35,8 @@ import { SubagentView } from "./subagent-view.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
 import { allNeeds } from "./tools.js";
-import { AFTER_TURN_DOWN_WHY, BlockerStrip, HintStrip, ModelPopover, SessionBar, StatusBar, SystemBanner, TabStrip, engineDownText, HOSTED_HINT, type BarChipId, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
-import { AccountMark, Act, inShell, type BatchActions } from "./kit.js";
+import { AFTER_TURN_DOWN_WHY, BlockerStrip, HintStrip, ModelPopover, SessionBar, StatusBar, SubviewBar, SystemBanner, TabStrip, engineDownText, HOSTED_HINT, type BarChipId, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
+import { AccountMark, Act, CountBadge, inShell, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding } from "./keys.js";
@@ -85,6 +86,14 @@ export interface V3Data {
   changes: (key: string) => ChangedFile[];
   /** Changed files past the Changes list's cap (it names them as a count). */
   changesMore?: (key: string) => number;
+  /** Where a session's changes come from: git (vs HEAD) or a folder without git (vs its last local snapshot); git when absent. */
+  changesSource?: (key: string) => ChangesSource;
+  /** The git stashes of the session's repository. */
+  stashes?: (key: string) => StashEntry[];
+  /** The Shelf of the session's folder: local copies Agent Switch keeps. */
+  shelves?: (key: string) => ShelfEntry[];
+  /** Rollback, Shelve, Stash… can run; when false the toolbar says they arrive later. */
+  changesOps?: boolean;
   next:(key: string) => { text: string; action: string } | null;
   /** The session-menu entries that do something for this session; all when absent. */
   menu?: (key: string) => readonly SessionMenuItem[];
@@ -140,6 +149,8 @@ export type V3Action =
   | { type: "set-thinking"; key: string; level: string }
   | { type: "blocker"; key: string }
   | { type: "create-pr" | "open-pr" | "review" | "commit"; key: string }
+  /** The Changes window's toolbar, Shelf and Stash (owner, 2026-11-27). */
+  | ({ type: "changes"; key: string } & ChangesOp)
   | { type: "account"; op: "add" | "refresh" | "use" | "sign-in" | "terminal" | "more"; key?: string }
   | { type: "library"; op: "auto-keep"; value: boolean }
   | { type: "library"; op: "pin" | "archive"; key: string; value: boolean }
@@ -594,7 +605,7 @@ export function V3Window({
         kind: "page" as const,
         id,
         ...(p.startsWith("review:")
-          ? { label: `Review · ${data.sessions.find((x) => x.key === p.slice(7))?.title ?? p.slice(7)}`, icon: <FileCode className="size-3.5" /> }
+          ? { label: `Review · ${data.sessions.find((x) => x.key === p.slice(7))?.title ?? p.slice(7)}`, icon: <FileCode className="size-3.5" />, bar: true }
           : p.startsWith("board:")
             ? { label: `Board · ${data.sessions.find((x) => x.key === p.slice(6))?.title ?? p.slice(6)}`, icon: <Swords className="size-3.5" /> }
             : PAGE_TAB[p as PageId | "sessions-table"]),
@@ -613,7 +624,17 @@ export function V3Window({
   });
 
   const page = (p: Page): ReactNode => {
-    if (p.startsWith("review:")) return slots.review ? slots.review(p.slice(7), reviewFocus.get(p.slice(7))) : null;
+    if (p.startsWith("review:")) {
+      const key = p.slice(7);
+      if (!slots.review) return null;
+      // A sub-view of the session (owner, 2026-11-27): a bar says so and leads back, as the subagent view and the board do.
+      return (
+        <section aria-label="Review" className="flex min-h-0 flex-1 flex-col">
+          <SubviewBar parentTitle={data.sessions.find((x) => x.key === key)?.title ?? key} onBack={() => openSession(key)} icon={<FileCode className="size-3.5 shrink-0 text-ac-muted" aria-hidden />} label="Review changes" />
+          <div className="flex min-h-0 flex-1 flex-col">{slots.review(key, reviewFocus.get(key))}</div>
+        </section>
+      );
+    }
     if (p.startsWith("board:")) return slots.board ? slots.board(p.slice(6), boardFocus.get(p.slice(6)), () => openSession(p.slice(6))) : null;
     if (p === "accounts")
       return (
@@ -885,7 +906,7 @@ export function V3Window({
       const f = data.summary(activeSession);
       return f && <SummaryWindow f={f} onNext={() => act({ type: "blocker", key: activeSession })} onCreatePr={() => act({ type: "create-pr", key: activeSession })} onOpenPr={() => act({ type: "open-pr", key: activeSession })} onHide={() => frame.setRight(null)} moreOpen={moreOpen} onToggleMore={() => setMoreOpen((v) => !v)} onReview={slots.review ? () => openReview(activeSession) : undefined} />;
     }
-    if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} more={data.changesMore?.(activeSession) ?? 0} reviewAvailable={!!slots.review} commitAvailable={data.commitAvailable ?? true} onReview={(file) => (slots.review ? openReview(activeSession, file) : act({ type: "review", key: activeSession }))} onCommit={() => (slots.review ? openReview(activeSession) : act({ type: "commit", key: activeSession }))} onHide={() => frame.setRight(null)} />;
+    if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} more={data.changesMore?.(activeSession) ?? 0} reviewAvailable={!!slots.review} commitAvailable={data.commitAvailable ?? true} onReview={(file) => (slots.review ? openReview(activeSession, file) : act({ type: "review", key: activeSession }))} onCommit={() => (slots.review ? openReview(activeSession) : act({ type: "commit", key: activeSession }))} onHide={() => frame.setRight(null)} source={data.changesSource?.(activeSession)} stashes={data.stashes?.(activeSession) ?? []} shelves={data.shelves?.(activeSession) ?? []} onRun={data.changesOps === false ? undefined : (op) => act({ type: "changes", key: activeSession, ...op })} />;
     const s = data.sessions.find((x) => x.key === activeSession);
     return s && <ChildrenWindow noun={childNoun(s)} children={s.children} onHide={() => frame.setRight(null)} subagents={!!openSubagent} onOpen={(c) => (childOpens(c) ? openSession(c.id) : openSubagent?.(activeSession, c.id))} />;
   })();
@@ -1236,6 +1257,4 @@ export function V3Window({
 }
 
 /** A tab's or button's count, the pill the stripe and groups use. */
-function PaneCount({ n, tone }: { n: number; tone?: "warn" }) {
-  return <span className={cn("ml-1 inline-flex h-4 min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-normal tabular-nums leading-none", tone === "warn" ? "ac-nudge bg-ac-warn-tint text-ac-warn-text" : "bg-ac-line text-ac-soft")}>{n}</span>;
-}
+const PaneCount = CountBadge;

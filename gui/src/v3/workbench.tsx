@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { ArrowDown, ArrowDownRight, ArrowRight, ArrowUp, ArrowUpRight, Check, ChevronDown, CircleX, Ellipsis, Eye, Folder, FolderGit2, GitBranch, Lightbulb, Lock, MessageSquareText, Server, SquareTerminal, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowDownRight, ArrowRight, ArrowUp, ArrowUpRight, Check, ChevronDown, CircleX, Ellipsis, Eye, Folder, FolderGit2, GitBranch, Lightbulb, Lock, MessageSquareText, Server, SquareTerminal, TriangleAlert, X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
@@ -23,9 +23,11 @@ import { MenuSection, POPOVER_TRIGGER } from "./menus.js";
 
 /** Tab: rounded top corners; the active one is framed with a 2 px accent top edge and joins the content below (spec §3.2). */
 export const TAB = "relative flex h-[33px] min-w-0 items-center gap-2 rounded-t-md border-x border-t-2 px-3 text-xs";
+/** The open tab takes the colour of what sits right under it (owner, 2026-11-27): a session's bar, a page's body. */
 export const TAB_ON = "border-ac-line border-t-ac-brand bg-ac-bg text-ac-text";
+const TAB_ON_SESSION = "border-ac-line border-t-ac-brand bg-ac-panel text-ac-text";
 
-export type TabItem = { kind: "page"; id: string; label: string; icon: ReactNode } | { kind: "session"; id: string; title: string; state: SessionState };
+export type TabItem = { kind: "page"; id: string; label: string; icon: ReactNode; /** A bar in the session bar's colour sits under it (a review's way back): the open tab takes that colour. */ bar?: boolean } | { kind: "session"; id: string; title: string; state: SessionState };
 
 /** Two letters for a pinned session tab: the first letters of its first two words ("Signing arena: …" → "SA"). */
 export const monogram = (title: string): string => {
@@ -182,7 +184,7 @@ export function TabStrip({
             className={cn(
               TAB,
               pin ? "shrink-0 justify-center gap-1.5 px-2.5" : isMain ? cn("group min-w-[120px] shrink-0", t.kind === "session" ? "max-w-[220px]" : "max-w-[300px]") : t.kind === "session" ? "group min-w-[120px] max-w-[220px] shrink" : "min-w-[120px] max-w-[300px] shrink",
-              on ? TAB_ON : "border-transparent text-ac-muted hover:bg-ac-raise hover:text-ac-text",
+              on ? (t.kind === "session" || t.bar ? TAB_ON_SESSION : TAB_ON) : "border-transparent text-ac-muted hover:bg-ac-raise hover:text-ac-text",
               drag?.moving && drag.id === t.id && "opacity-50",
               // While a tab drags, the tabs of the other groups dim: it can only land among its own.
               drag?.moving && drag.id !== t.id && rankOf(drag.id) !== rank(t) && "opacity-40",
@@ -284,6 +286,27 @@ export interface SessionPlace {
   changed?: number | null;
   ahead?: number;
   behind?: number;
+}
+
+/**
+ * The bar over a sub-view of a session — its review, a subagent's transcript — that says where you are and
+ * leads back to the session (owner, 2026-11-27). Same height and colour as the session bar it stands in for.
+ */
+export function SubviewBar({ parentTitle, onBack, icon, label, children }: { parentTitle: string; onBack: () => void; icon?: ReactNode; label: string; children?: ReactNode }) {
+  return (
+    <div data-subview-bar="" className="flex h-10 shrink-0 items-center gap-2 overflow-hidden border-b border-ac-line bg-ac-panel px-2">
+      <button type="button" onClick={onBack} className="inline-flex h-7 min-w-0 shrink items-center gap-1.5 rounded-md px-2 text-[12px] text-ac-muted hover:bg-ac-raise hover:text-ac-text">
+        <ArrowLeft className="size-3.5 shrink-0" />
+        <span className="truncate">Back to {parentTitle}</span>
+      </button>
+      <span className="h-4 w-px shrink-0 bg-ac-line" />
+      {icon}
+      <span className="min-w-0 truncate text-[12.5px] font-medium text-ac-text" title={label}>
+        {label}
+      </span>
+      {children}
+    </div>
+  );
 }
 
 /** A path with the home folder as `~`. Pure. */

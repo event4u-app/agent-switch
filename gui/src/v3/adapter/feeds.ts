@@ -202,6 +202,28 @@ export function parseChanges(v: unknown): { status: "A" | "M" | "D" | "R" | "?";
     .map((f) => ({ status: f.status as "A" | "M" | "D" | "R" | "?", path: f.path as string, added: num(f.added), removed: num(f.removed) }));
 }
 
+/** The rest of `changes <session> --json`: where the changes come from, the Shelf, the stashes. */
+export interface ChangesExtra {
+  source: { kind: "git" } | { kind: "local"; snapshot: number | null };
+  shelves: { id: string; message: string; created: number; kind: "git" | "local"; full: boolean; files: number }[];
+  stashes: { ref: string; message: string; branch: string | null; created: number; files: number }[];
+}
+
+export function parseChangesExtra(v: unknown): ChangesExtra {
+  const o = obj(v);
+  const src = obj(o.source);
+  const source: ChangesExtra["source"] = src.kind === "local" ? { kind: "local", snapshot: typeof src.snapshot === "number" ? src.snapshot : null } : { kind: "git" };
+  const shelves = arr(o.shelves)
+    .map(obj)
+    .filter((e) => typeof e.id === "string")
+    .map((e) => ({ id: e.id as string, message: str(e.message) ?? "", created: num(e.created), kind: e.kind === "local" ? ("local" as const) : ("git" as const), full: e.full === true, files: num(e.files) }));
+  const stashes = arr(o.stashes)
+    .map(obj)
+    .filter((e) => typeof e.ref === "string")
+    .map((e) => ({ ref: e.ref as string, message: str(e.message) ?? "", branch: str(e.branch) ?? null, created: num(e.created), files: num(e.files) }));
+  return { source, shelves, stashes };
+}
+
 export function parseHistory(v: unknown): HistoryRow[] {
   return arr(v)
     .map(obj)

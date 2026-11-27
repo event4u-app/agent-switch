@@ -41,3 +41,17 @@ describe("the session status bar", () => {
     expect(screen.queryByRole("contentinfo", { name: "Session status" })).toBeNull();
   });
 });
+
+describe("a session's review is a sub-view with a way back (owner, 2026-11-27)", () => {
+  it("shows a bar naming the session; Back returns to it", () => {
+    render(<V3Window data={data()} slots={{ ...slots, review: () => <p>the diff</p> }} act={vi.fn()} />);
+    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
+    fireEvent.click(screen.getByLabelText(/^Changes/));
+    fireEvent.click(screen.getByRole("button", { name: "Review changes" }));
+    const review = within(screen.getByRole("region", { name: "Review" }));
+    expect(review.getByText("the diff")).toBeTruthy();
+    fireEvent.click(review.getByRole("button", { name: /Back to Event store/ }));
+    expect(screen.queryByRole("region", { name: "Review" })).toBeNull();
+    expect(screen.getByRole("tab", { name: /Event store/ }).getAttribute("aria-selected")).toBe("true");
+  });
+});

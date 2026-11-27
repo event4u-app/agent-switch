@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 
 import { LangKeyed } from "../../i18n/LangKeyed.js";
 import * as ipc from "../../ipc.js";
+import type { ChangesExtra } from "./feeds.js";
 import { allActions } from "../../redesign/RedesignApp.js";
 import { useEngines } from "../../redesign/engines/index.js";
 import { OverlayHost } from "../../redesign/Hosts.js";
@@ -186,6 +187,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [changes, setChanges] = useState<Map<string, ChangedFile[]>>(new Map());
   const [changesMore, setChangesMore] = useState<Map<string, number>>(new Map());
+  const [changesExtra, setChangesExtra] = useState<Map<string, ChangesExtra>>(new Map());
   const [terminals, setTerminals] = useState<ReadonlyMap<string, SessionTerminal>>(new Map());
   const terminalsAt = useRef(new Map<string, number>());
   const [takeover, setTakeover] = useState<TakeoverState | null>(null);
@@ -202,16 +204,18 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   // A model or thinking change shows until the session's next turn reports it in the transcript.
   const [nextTurn, setNextTurn] = useState<ReadonlyMap<string, NextTurn>>(() => new Map());
 
-  const wantChanges = useCallback((key: string) => {
+  // `force`: read now (after Rollback, Shelve, Stash…), however fresh the last read is.
+  const wantChanges = useCallback((key: string, force = false) => {
     const at = changesAt.current.get(key) ?? 0;
-    if (Date.now() - at < CHANGES_FRESH_MS) return;
+    if (!force && Date.now() - at < CHANGES_FRESH_MS) return;
     changesAt.current.set(key, Date.now());
     setTimeout(() => {
       ipc
         .sessionChanges(key)
-        .then(({ files, more }) => {
+        .then(({ files, more, source, shelves, stashes }) => {
           setChanges((m) => new Map(m).set(key, files));
           setChangesMore((m) => new Map(m).set(key, more));
+          setChangesExtra((m) => new Map(m).set(key, { source, shelves, stashes }));
         })
         .catch(() => {});
     }, 0);
@@ -284,6 +288,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     terminalApp,
     changes,
     changesMore,
+    changesExtra,
     doneAfterMs: getDoneAfterMin() * 60_000,
     wantChanges,
     terminals,
@@ -319,6 +324,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     refresh,
     reveal: () => void ipc.showWindow().catch(() => {}),
     rows: () => byKey,
+    refreshChanges: (key) => wantChanges(key, true),
     needs: () => feeds.needs?.items ?? [],
     requests: () => s.switchRequests,
     executor: () => ipc.getLinkExecutor(),
